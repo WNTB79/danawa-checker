@@ -20,13 +20,10 @@ URL_LIST = [
 
 async def get_danawa_data():
     async with async_playwright() as p:
-        # 위장막 강화: 실제 Chrome과 유사한 인자 추가
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
         context = await browser.new_context(
-            viewport={'width': 1280, 'height': 1024},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            locale="ko-KR",
-            timezone_id="Asia/Seoul"
+            viewport={'width': 1920, 'height': 1080}, # 화면을 크게 넓혀서 좌우 구분을 확실히 함
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
         
@@ -35,43 +32,37 @@ async def get_danawa_data():
 
         for idx, url in enumerate(URL_LIST, 1):
             try:
-                print(f"🚀 {idx}개입 페이지 접속 중...")
-                #referer를 추가하여 자연스러운 유입으로 위장
+                print(f"🚀 {idx}개입 페이지 접속 중 (오른쪽 전용 추출)...")
                 await page.goto(url, wait_until="networkidle", timeout=60000)
+                await asyncio.sleep(8)
                 
-                # 다나와 특유의 지연 로딩을 기다림
-                await asyncio.sleep(10)
-                
-                # 화면을 아래로 천천히 내려서 가격표 로딩 유도
-                for _ in range(3):
-                    await page.mouse.wheel(0, 400)
-                    await asyncio.sleep(1)
-
-                # [디버깅용 스크린샷] 1번 구성만 찍어서 확인
-                if idx == 1:
-                    await page.screenshot(path="danawa_check.png")
-                    print("📸 1개입 화면 스크린샷 저장 완료 (danawa_check.png)")
+                # 확실한 로딩을 위해 하단으로 스크롤 후 잠시 대기
+                await page.evaluate("window.scrollTo(0, 1200)")
+                await asyncio.sleep(2)
 
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
                 
-                # 선택자 범위를 아주 넓게 잡음 (클래스명 일부만 포함해도 수집)
-                # '오른쪽 섹션'을 찾기 위해 .low_price, #lowPrice_r, .pay_comparison_list 등을 모두 뒤짐
-                items = soup.select("#lowPrice_r .diff_item") or \
-                        soup.select("div[class*='pay_comparison_list']:not([class*='free_delivery']) .diff_item") or \
-                        soup.select(".diff_item")
-
-                # 만약 여전히 0건이라면 왼쪽/오른쪽 구분 없이 일단 다 긁어와서 반으로 나눔 (오른쪽이 보통 뒤에 나옴)
-                if not items:
-                    all_items = soup.select(".diff_item")
-                    if len(all_items) > 5:
-                        items = all_items[len(all_items)//2:] 
-
-                print(f"   ㄴ {idx}개입 데이터 발견: {len(items)}건")
+                # --- [핵심 수정] 오른쪽 섹션만 따로 떼어내기 ---
+                # 'lowPrice_r'이라는 ID를 가진 div 섹션을 통째로 가져옵니다.
+                right_section_html = soup.find('div', id='lowPrice_r')
+                
+                items = []
+                if right_section_html:
+                    # 잘라낸 오른쪽 섹션 안에서만 상품 리스트(.diff_item)를 찾습니다.
+                    items = right_section_html.select(".diff_item")
+                    print(f"   ㄴ [확인] 오른쪽 전용 섹션에서 {len(items)}건 발견")
+                else:
+                    # 만약 ID가 없다면 클래스명으로 다시 시도
+                    right_area = soup.select_one(".pay_comparison_list:not(.free_delivery)")
+                    if right_area:
+                        items = right_area.select(".diff_item")
+                        print(f"   ㄴ [보조] 유료배송 섹션에서 {len(items)}건 발견")
 
                 for i in range(5):
                     if i < len(items):
-                        p_tag = items[i].select_one(".prc_c") or items[i].select_one(".price_sect em")
+                        # 가격 태그 추출
+                        p_tag = items[i].select_one(".prc_c")
                         price = p_tag.get_text().replace(",", "").replace("원", "").strip() if p_tag else "0"
                         final_matrix[i].append(price)
                     else:
@@ -91,11 +82,11 @@ async def get_danawa_data():
                 sh = gc.open_by_key(SH_ID)
                 wks = sh.get_worksheet(0)
                 wks.insert_rows(final_matrix, row=2)
-                print(f"✅ 데이터 삽입 성공!")
+                print(f"✅ 오른쪽 섹션 데이터만 선별하여 삽입 완료!")
             except Exception as e:
                 print(f"❌ 시트 오류: {e}")
         else:
-            print("❌ 데이터 발견 실패. 스크린샷 확인이 필요합니다.")
+            print("❌ 오른쪽 섹션 추출 실패")
 
         await browser.close()
 
