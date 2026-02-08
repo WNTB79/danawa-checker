@@ -7,7 +7,7 @@ import json
 import os
 
 # === [수정 포인트] 여기에 본인의 구글 시트 ID를 넣으세요 ===
-SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ" 
+SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
 # =====================================================
 
 async def get_danawa_data():
