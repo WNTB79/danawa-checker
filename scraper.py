@@ -49,7 +49,9 @@ async def get_danawa_data():
             print("✅ 최종 성공!")
 
         except Exception as e:
-            print(f"❌ 최종 실패 지점: {e}")
+            # 에러의 상세 원인을 더 자세히 출력하도록 변경
+            print(f"❌ 최종 실패 지점: {type(e).__name__}")
+            print(f"❌ 상세 이유: {e}")
 
         await browser.close()
 
