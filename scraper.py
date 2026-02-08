@@ -20,9 +20,9 @@ URL_LIST = [
 
 async def get_danawa_data():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            viewport={'width': 1920, 'height': 1080}, # 화면을 크게 넓혀서 좌우 구분을 확실히 함
+            viewport={'width': 1920, 'height': 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
@@ -32,37 +32,36 @@ async def get_danawa_data():
 
         for idx, url in enumerate(URL_LIST, 1):
             try:
-                print(f"🚀 {idx}개입 페이지 접속 중 (오른쪽 전용 추출)...")
+                print(f"🚀 {idx}개입 페이지 분석 중 (배송비 문구 필터링)...")
                 await page.goto(url, wait_until="networkidle", timeout=60000)
-                await asyncio.sleep(8)
+                await asyncio.sleep(10)
                 
-                # 확실한 로딩을 위해 하단으로 스크롤 후 잠시 대기
-                await page.evaluate("window.scrollTo(0, 1200)")
-                await asyncio.sleep(2)
+                await page.evaluate("window.scrollTo(0, 1100)")
+                await asyncio.sleep(3)
 
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
                 
-                # --- [핵심 수정] 오른쪽 섹션만 따로 떼어내기 ---
-                # 'lowPrice_r'이라는 ID를 가진 div 섹션을 통째로 가져옵니다.
-                right_section_html = soup.find('div', id='lowPrice_r')
+                # 모든 상품 항목(.diff_item)을 가져옵니다.
+                all_items = soup.select(".diff_item")
                 
-                items = []
-                if right_section_html:
-                    # 잘라낸 오른쪽 섹션 안에서만 상품 리스트(.diff_item)를 찾습니다.
-                    items = right_section_html.select(".diff_item")
-                    print(f"   ㄴ [확인] 오른쪽 전용 섹션에서 {len(items)}건 발견")
-                else:
-                    # 만약 ID가 없다면 클래스명으로 다시 시도
-                    right_area = soup.select_one(".pay_comparison_list:not(.free_delivery)")
-                    if right_area:
-                        items = right_area.select(".diff_item")
-                        print(f"   ㄴ [보조] 유료배송 섹션에서 {len(items)}건 발견")
+                # --- [핵심 로직] 배송비 텍스트 조건부 필터링 ---
+                right_items = []
+                for item in all_items:
+                    # 배송비 정보가 적힌 태그 찾기
+                    delivery_info = item.select_one(".delivery_base")
+                    delivery_text = delivery_info.get_text() if delivery_info else ""
+                    
+                    # 1. "무료"라는 단어가 없고
+                    # 2. "배송비" 또는 "원" 이라는 단어가 포함된 경우만 오른쪽 섹션으로 간주
+                    if "무료" not in delivery_text and ("배송비" in delivery_text or "원" in delivery_text):
+                        right_items.append(item)
+
+                print(f"   ㄴ [필터링 결과] 유료배송 상품 {len(right_items)}건 발견")
 
                 for i in range(5):
-                    if i < len(items):
-                        # 가격 태그 추출
-                        p_tag = items[i].select_one(".prc_c")
+                    if i < len(right_items):
+                        p_tag = right_items[i].select_one(".prc_c")
                         price = p_tag.get_text().replace(",", "").replace("원", "").strip() if p_tag else "0"
                         final_matrix[i].append(price)
                     else:
@@ -72,7 +71,7 @@ async def get_danawa_data():
                 print(f"⚠️ {idx}개입 에러: {e}")
                 for i in range(5): final_matrix[i].append("-")
 
-        # --- 저장 로직 ---
+        # --- 구글 시트 저장 ---
         has_data = any(row[2] != "-" for row in final_matrix)
         if has_data:
             try:
@@ -82,11 +81,11 @@ async def get_danawa_data():
                 sh = gc.open_by_key(SH_ID)
                 wks = sh.get_worksheet(0)
                 wks.insert_rows(final_matrix, row=2)
-                print(f"✅ 오른쪽 섹션 데이터만 선별하여 삽입 완료!")
+                print(f"✅ 유료배송 데이터만 정확히 골라내어 기록했습니다!")
             except Exception as e:
                 print(f"❌ 시트 오류: {e}")
         else:
-            print("❌ 오른쪽 섹션 추출 실패")
+            print("❌ 조건에 맞는 (유료배송) 데이터를 찾지 못했습니다.")
 
         await browser.close()
 
