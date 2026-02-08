@@ -6,8 +6,8 @@ import gspread
 import json
 import os
 
-# === 시트 ID (주소창에서 가져온 값) ===
-SH_ID = "1eRclwW7D-684fN_W6I_TDPw7P-qW_W6I_TDPw7P-q" 
+# 기존 예시 ID 대신 판매자님의 실제 ID를 넣었습니다.
+SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
 
 async def get_danawa_data():
     async with async_playwright() as p:
