@@ -7,6 +7,7 @@ import json
 import os
 
 SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ" 
+MAX_ROWS = 11000  # 3달치 데이터 유지 (24시간 * 90일 * 5행 = 약 10,800행)
 
 async def get_danawa_data():
     async with async_playwright() as p:
@@ -17,7 +18,7 @@ async def get_danawa_data():
         )
         page = await context.new_page()
         
-        print("🔗 다나와 접속 및 TOP 5 수집 시작...")
+        print("🔗 다나와 접속 및 데이터 수집 중...")
         await page.goto("https://prod.danawa.com/info/?pcode=13412984", wait_until="load")
         
         await asyncio.sleep(7)
@@ -33,7 +34,7 @@ async def get_danawa_data():
             all_items = soup.select(".diff_item")
             right_section = all_items[len(all_items)//2:] 
 
-        # --- 가격 변동 체크 로직 ---
+        # --- 구글 시트 연결 및 이전 가격 확인 ---
         try:
             creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
             creds = json.loads(creds_raw)
@@ -41,14 +42,14 @@ async def get_danawa_data():
             sh = gc.open_by_key(SH_ID)
             wks = sh.get_worksheet(0)
             
-            # 기존 시트의 2행 4열(이전 1위 가격)을 가져옵니다.
-            # 데이터가 하나도 없을 경우를 대비해 예외처리 합니다.
             try:
-                prev_first_price = int(wks.cell(2, 4).value.replace(",", ""))
+                # 2행 4열(이전 1위 가격) 확인
+                prev_val = wks.cell(2, 4).value
+                prev_first_price = int(prev_val.replace(",", "")) if prev_val else 0
             except:
                 prev_first_price = 0
         except Exception as e:
-            print(f"⚠️ 이전 데이터 읽기 실패 (첫 실행으로 간주): {e}")
+            print(f"⚠️ 시트 연결 실패: {e}")
             prev_first_price = 0
 
         rows = []
@@ -58,13 +59,12 @@ async def get_danawa_data():
             
             current_price = int(price_tag.get_text().replace(",", "").replace("원", "").strip())
             
-            # 배송비 처리
             deliv_tag = item.select_one(".delivery_base")
             delivery = deliv_tag.get_text().strip() if deliv_tag else ""
             if "무료" not in delivery:
                 delivery = "유료"
             
-            # 변동 사항 계산 (1위에 대해서만 수행)
+            # 가격 변동 계산
             change_text = ""
             if i == 1 and prev_first_price != 0:
                 diff = current_price - prev_first_price
@@ -72,20 +72,29 @@ async def get_danawa_data():
                     change_text = f"▲ {diff:,}원 상승"
                 elif diff < 0:
                     change_text = f"▼ {abs(diff):,}원 하락"
-                # 변동이 0원일 때는 빈칸 유지
 
-            # [날짜, 순위, 플랫폼, 가격, 배송비, 변동]
             rows.append([now_str, f"{i}위", "다나와", current_price, delivery, change_text])
 
-        # --- 구글 시트 저장 (상단 삽입) ---
+        # --- 데이터 저장 및 오래된 데이터 삭제 로직 ---
         if rows:
             try:
+                # 1. 최신 데이터 상단 삽입
                 wks.insert_rows(rows, row=2)
-                print("✅ 최신 데이터 및 변동 사항 삽입 성공!")
+                print(f"✅ 최신 데이터 5건 삽입 완료.")
+
+                # 2. 전체 행 개수 확인 후 삭제
+                # row_count는 데이터가 들어있는 행의 개수를 의미합니다.
+                total_rows = len(wks.get_all_values())
+                if total_rows > MAX_ROWS:
+                    # MAX_ROWS 이후부터 끝까지 삭제
+                    # 가령 11,005행이 되었다면, 11,001행부터 5개 행을 삭제
+                    wks.delete_rows(MAX_ROWS + 1, total_rows)
+                    print(f"🗑️ 3달치 초과 데이터 자동 삭제 완료 (현재 {total_rows}행)")
+                
             except Exception as e:
-                print(f"❌ 시트 저장 에러: {e}")
+                print(f"❌ 시트 작업 중 오류: {e}")
         else:
-            print("❌ 수집 실패")
+            print("❌ 수집된 데이터가 없습니다.")
 
         await browser.close()
 
