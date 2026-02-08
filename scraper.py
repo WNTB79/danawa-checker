@@ -49,26 +49,20 @@ async def get_danawa_data():
             rows.append([now_str, "전체섹션", f"{i}위", price])
             print(f"전체 {i}위: {price}원")
 
-        # 3. 구글 시트로 전송
+        # 3. 구글 시트로 전송 (보정판)
         try:
-            # 깃허브 Secret에 저장한 JSON 키를 불러옵니다
             creds_json = os.environ.get('GCP_CREDENTIALS')
             if not creds_json:
-                raise Exception("GCP_CREDENTIALS Secret이 설정되지 않았습니다.")
+                raise Exception("GitHub Secret (GCP_CREDENTIALS)을 찾을 수 없습니다.")
             
             creds = json.loads(creds_json)
             gc = gspread.service_account_from_dict(creds)
             
-            # 시트 열기 및 데이터 추가
             sh = gc.open_by_key(SH_ID)
-            worksheet = sh.get_worksheet(0) # 첫 번째 탭 선택
+            worksheet = sh.get_worksheet(0)
             worksheet.append_rows(rows)
             print(f"\n✅ 성공: {len(rows)}개의 데이터를 시트에 기록했습니다.")
             
         except Exception as e:
-            print(f"\n❌ 시트 저장 실패: {e}")
-
-        await browser.close()
-
-if __name__ == "__main__":
-    asyncio.run(get_danawa_data())
+            # 에러 종류를 아주 자세히 출력하게 변경했습니다.
+            print(f"\n❌ 시트 저장 실패 원인: {str(e)}")
