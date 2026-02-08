@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      TZ: Asia/Seoul # 서버 시간을 한국 시간으로 설정
+      TZ: Asia/Seoul
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
@@ -18,7 +18,10 @@ jobs:
           python-version: '3.9'
       - name: Install dependencies
         run: |
-          pip install playwright beautifulsoup4
+          # 구글 시트 연동을 위한 gspread를 추가로 설치합니다
+          pip install playwright beautifulsoup4 gspread 
           playwright install chromium
       - name: Run Scraper
+        env:
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
         run: python scraper.py
