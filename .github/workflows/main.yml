@@ -2,8 +2,8 @@ name: 1Hour Price Check
 
 on:
   schedule:
-    - cron: '0 * * * *' # 매 정시마다 실행 (UTC 기준)
-  workflow_dispatch: # 수동 실행 버튼 생성
+    - cron: '0 * * * *' # 1시간마다 실행
+  workflow_dispatch: # 수동 실행 버튼
 
 jobs:
   build:
@@ -15,6 +15,8 @@ jobs:
         with:
           python-version: '3.9'
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: |
+          pip install playwright beautifulsoup4
+          playwright install chromium
       - name: Run Scraper
         run: python scraper.py
