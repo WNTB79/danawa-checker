@@ -38,7 +38,6 @@ async def get_danawa_data():
             right_section = all_items[len(all_items)//2:] 
 
         rows = []
-        # 최신 데이터가 위로 가도록 수집된 순서대로 리스트를 만듭니다.
         for i, item in enumerate(right_section[:5], 1):
             price_tag = item.select_one(".prc_c")
             if not price_tag: continue
@@ -64,8 +63,7 @@ async def get_danawa_data():
                 sh = gc.open_by_key(SH_ID)
                 wks = sh.get_worksheet(0)
                 
-                # [수정포인트] insert_rows를 사용하여 2행(제목줄 바로 아래)부터 데이터를 끼워 넣습니다.
-                # rows 리스트를 그대로 넣으면 1위가 가장 위로 가게 됩니다.
+                # 2행(제목줄 바로 아래)부터 데이터를 끼워 넣습니다.
                 wks.insert_rows(rows, row=2)
                 print("✅ 최신 데이터를 시트 상단(2행)에 삽입 성공!")
             except Exception as e:
@@ -75,5 +73,6 @@ async def get_danawa_data():
 
         await browser.close()
 
+# 이 아래 두 줄이 반드시 포함되어야 합니다!
 if __name__ == "__main__":
-    asyncio.run(get_
+    asyncio.run(get_danawa_data())
