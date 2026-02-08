@@ -1,0 +1,20 @@
+name: 1Hour Price Check
+
+on:
+  schedule:
+    - cron: '0 * * * *' # 매 정시마다 실행 (UTC 기준)
+  workflow_dispatch: # 수동 실행 버튼 생성
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+      - name: Run Scraper
+        run: python scraper.py
