@@ -7,7 +7,7 @@ import json
 import os
 
 SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ" 
-MAX_ROWS = 11000  # 3달치 데이터 유지 (24시간 * 90일 * 5행 = 약 10,800행)
+MAX_ROWS = 10000 # 가로형은 행을 적게 쓰므로 1만 행이면 충분히 오래 보관합니다.
 
 async def get_danawa_data():
     async with async_playwright() as p:
@@ -18,83 +18,69 @@ async def get_danawa_data():
         )
         page = await context.new_page()
         
-        print("🔗 다나와 접속 및 데이터 수집 중...")
+        print("🔗 다나와 접속 및 가로형 수집 시작...")
         await page.goto("https://prod.danawa.com/info/?pcode=13412984", wait_until="load")
-        
-        await asyncio.sleep(7)
-        await page.evaluate("window.scrollTo(0, 1200)")
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
-        content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        right_section = soup.select("#lowPrice_r .diff_item")
-        if not right_section:
-            all_items = soup.select(".diff_item")
-            right_section = all_items[len(all_items)//2:] 
+        # 각 순위별(1~5위)로 구성별 가격을 담을 리스트 (5줄 생성용)
+        # 구성: [ [1위줄], [2위줄], [3위줄], [4위줄], [5위줄] ]
+        final_matrix = [[now_str, f"{i}위"] for i in range(1, 6)]
 
-        # --- 구글 시트 연결 및 이전 가격 확인 ---
-        try:
-            creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
-            creds = json.loads(creds_raw)
-            gc = gspread.service_account_from_dict(creds)
-            sh = gc.open_by_key(SH_ID)
-            wks = sh.get_worksheet(0)
-            
+        # 1개입부터 6개입까지 순회
+        for bundle_idx in range(1, 7):
             try:
-                # 2행 4열(이전 1위 가격) 확인
-                prev_val = wks.cell(2, 4).value
-                prev_first_price = int(prev_val.replace(",", "")) if prev_val else 0
-            except:
-                prev_first_price = 0
-        except Exception as e:
-            print(f"⚠️ 시트 연결 실패: {e}")
-            prev_first_price = 0
+                print(f"📦 {bundle_idx}개입 클릭 중...")
+                button_selector = f".other_conf_list li:nth-child({bundle_idx}) a"
+                await page.wait_for_selector(button_selector, timeout=5000)
+                await page.click(button_selector)
+                await asyncio.sleep(4)
 
-        rows = []
-        for i, item in enumerate(right_section[:5], 1):
-            price_tag = item.select_one(".prc_c")
-            if not price_tag: continue
-            
-            current_price = int(price_tag.get_text().replace(",", "").replace("원", "").strip())
-            
-            deliv_tag = item.select_one(".delivery_base")
-            delivery = deliv_tag.get_text().strip() if deliv_tag else ""
-            if "무료" not in delivery:
-                delivery = "유료"
-            
-            # 가격 변동 계산
-            change_text = ""
-            if i == 1 and prev_first_price != 0:
-                diff = current_price - prev_first_price
-                if diff > 0:
-                    change_text = f"▲ {diff:,}원 상승"
-                elif diff < 0:
-                    change_text = f"▼ {abs(diff):,}원 하락"
+                await page.evaluate("window.scrollTo(0, 1500)")
+                await asyncio.sleep(2)
 
-            rows.append([now_str, f"{i}위", "다나와", current_price, delivery, change_text])
+                content = await page.content()
+                soup = BeautifulSoup(content, 'html.parser')
+                items = soup.select("#lowPrice_r .diff_item")
+                if not items:
+                    items = soup.select(".pay_comparison_list:not(.free_delivery) .diff_item")
 
-        # --- 데이터 저장 및 오래된 데이터 삭제 로직 ---
-        if rows:
+                # 각 순위별로 가격을 해당 행에 추가
+                for i in range(5):
+                    if i < len(items):
+                        price_tag = items[i].select_one(".prc_c")
+                        price = price_tag.get_text().replace(",", "").replace("원", "").strip() if price_tag else "0"
+                    else:
+                        price = "-" # 데이터가 없을 경우
+                    
+                    final_matrix[i].append(price)
+
+            except Exception as e:
+                print(f"⚠️ {bundle_idx}개입 수집 실패: {e}")
+                # 실패 시 빈 칸 채우기
+                for i in range(5):
+                    final_matrix[i].append("-")
+
+        # --- 구글 시트 저장 ---
+        if final_matrix:
             try:
-                # 1. 최신 데이터 상단 삽입
-                wks.insert_rows(rows, row=2)
-                print(f"✅ 최신 데이터 5건 삽입 완료.")
+                creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
+                creds = json.loads(creds_raw)
+                gc = gspread.service_account_from_dict(creds)
+                sh = gc.open_by_key(SH_ID)
+                wks = sh.get_worksheet(0)
+                
+                # 가로로 완성된 5줄을 시트 상단에 삽입
+                wks.insert_rows(final_matrix, row=2)
+                print(f"✅ 가로형 데이터 수집 및 삽입 완료!")
 
-                # 2. 전체 행 개수 확인 후 삭제
-                # row_count는 데이터가 들어있는 행의 개수를 의미합니다.
+                # 초과 행 삭제
                 total_rows = len(wks.get_all_values())
                 if total_rows > MAX_ROWS:
-                    # MAX_ROWS 이후부터 끝까지 삭제
-                    # 가령 11,005행이 되었다면, 11,001행부터 5개 행을 삭제
                     wks.delete_rows(MAX_ROWS + 1, total_rows)
-                    print(f"🗑️ 3달치 초과 데이터 자동 삭제 완료 (현재 {total_rows}행)")
-                
             except Exception as e:
-                print(f"❌ 시트 작업 중 오류: {e}")
-        else:
-            print("❌ 수집된 데이터가 없습니다.")
+                print(f"❌ 저장 에러: {e}")
 
         await browser.close()
 
