@@ -10,20 +10,22 @@ SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
 MAX_ROWS = 10000
 
 URL_LIST = [
-    "https://prod.danawa.com/info/?pcode=13412984", # 1개입
-    "https://prod.danawa.com/info/?pcode=13413059", # 2개입
-    "https://prod.danawa.com/info/?pcode=13413086", # 3개입
-    "https://prod.danawa.com/info/?pcode=13413254", # 4개입
-    "https://prod.danawa.com/info/?pcode=13678937", # 5개입
-    "https://prod.danawa.com/info/?pcode=13413314"  # 6개입
+    "https://prod.danawa.com/info/?pcode=13412984",
+    "https://prod.danawa.com/info/?pcode=13413059",
+    "https://prod.danawa.com/info/?pcode=13413086",
+    "https://prod.danawa.com/info/?pcode=13413254",
+    "https://prod.danawa.com/info/?pcode=13678937",
+    "https://prod.danawa.com/info/?pcode=13413314"
 ]
 
 async def get_danawa_data():
     async with async_playwright() as p:
+        # 1. 브라우저 잠입 설정 강화
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Korea) Chrome/122.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            locale="ko-KR"
         )
         page = await context.new_page()
         
@@ -32,30 +34,42 @@ async def get_danawa_data():
 
         for idx, url in enumerate(URL_LIST, 1):
             try:
-                print(f"🚀 {idx}개입 페이지 접속 중 (오른쪽 섹션 추출)...")
-                await page.goto(url, wait_until="load", timeout=60000)
-                await asyncio.sleep(8) 
+                print(f"🚀 {idx}개입 페이지 접속 시도...")
+                # 페이지 로드 타임아웃 넉넉히 설정
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 
-                # 오른쪽 섹션이 로드되도록 확실하게 스크롤
-                await page.evaluate("window.scrollTo(0, 1100)")
+                # 2. 오른쪽 섹션(#lowPrice_r)이 나타날 때까지 강제 대기 (최대 15초)
+                try:
+                    await page.wait_for_selector("#lowPrice_r", timeout=15000)
+                except:
+                    print(f"   ⚠️ {idx}개입: 오른쪽 섹션 로딩 지연 중... 강제 수집 시도")
+
+                # 데이터 활성화를 위해 여러 번 스크롤
+                await page.mouse.wheel(0, 1000)
+                await asyncio.sleep(3)
+                await page.mouse.wheel(0, 500)
                 await asyncio.sleep(2)
 
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
                 
-                # --- [핵심 수정] 오직 오른쪽 섹션(#lowPrice_r) 안에 있는 아이템만 가져옵니다 ---
-                # 만약 ID가 안 잡힐 경우를 대비해 '배송비 유료/무료 전체' 클래스명을 명시
+                # 3. 오른쪽 영역 특정 (여러 방법 동원)
+                # 방법 A: ID로 찾기
                 right_area = soup.select("#lowPrice_r .diff_item")
                 
+                # 방법 B: ID가 없을 경우, "배송비 포함" 혹은 "유료" 섹션 찾기
                 if not right_area:
-                    # 다나와 레이아웃 변화 대응: 무료배송이 아닌(not .free_delivery) 가격비교 리스트 타겟팅
-                    right_area = soup.select(".pay_comparison_list:not(.free_delivery) .diff_item")
+                    # '무료배송' 클래스가 없는 가격비교 그룹 찾기
+                    sections = soup.select(".pay_comparison_list")
+                    for sec in sections:
+                        if "free_delivery" not in sec.get("class", []):
+                            right_area = sec.select(".diff_item")
+                            break
 
-                print(f"   ㄴ {idx}개입 오른쪽 데이터 발견: {len(right_area)}건")
+                print(f"   ㄴ {idx}개입 데이터 발견: {len(right_area)}건")
 
                 for i in range(5):
                     if i < len(right_area):
-                        # 해당 아이템 내의 가격 태그만 추출
                         p_tag = right_area[i].select_one(".prc_c")
                         price = p_tag.get_text().replace(",", "").replace("원", "").strip() if p_tag else "0"
                         final_matrix[i].append(price)
@@ -63,11 +77,10 @@ async def get_danawa_data():
                         final_matrix[i].append("-")
 
             except Exception as e:
-                print(f"⚠️ {idx}개입 수집 에러: {e}")
+                print(f"⚠️ {idx}개입 치명적 에러: {e}")
                 for i in range(5): final_matrix[i].append("-")
 
-        # --- 데이터 저장 ---
-        # 실제 가격 데이터가 하나라도 들어있는지 확인
+        # --- 데이터 저장부 ---
         has_data = any(row[2] != "-" for row in final_matrix)
         
         if has_data:
@@ -79,15 +92,11 @@ async def get_danawa_data():
                 wks = sh.get_worksheet(0)
                 
                 wks.insert_rows(final_matrix, row=2)
-                print(f"✅ [성공] 오른쪽 섹션(유/무료 전체) 데이터 삽입 완료!")
-
-                total_rows = len(wks.get_all_values())
-                if total_rows > MAX_ROWS:
-                    wks.delete_rows(MAX_ROWS + 1, total_rows)
+                print(f"✅ [성공] {now_str} 데이터가 시트에 기록되었습니다!")
             except Exception as e:
                 print(f"❌ 시트 저장 실패: {e}")
         else:
-            print("❌ 오른쪽 섹션 데이터를 찾지 못했습니다.")
+            print("❌ 모든 시도 실패: 다나와가 접속을 차단했거나 화면 구조가 완전히 바뀌었습니다.")
 
         await browser.close()
 
