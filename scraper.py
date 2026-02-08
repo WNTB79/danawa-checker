@@ -32,38 +32,43 @@ async def get_danawa_data():
 
         for idx, url in enumerate(URL_LIST, 1):
             try:
-                print(f"🚀 {idx}개입 페이지 분석 중 (배송비 문구 필터링)...")
+                print(f"🚀 {idx}개입 페이지 분석 중 (최종 수단)...")
                 await page.goto(url, wait_until="networkidle", timeout=60000)
-                await asyncio.sleep(10)
+                await asyncio.sleep(12) # 로딩 시간 대폭 연장
                 
-                await page.evaluate("window.scrollTo(0, 1100)")
+                # 강제 스크롤로 데이터 활성화
+                await page.evaluate("window.scrollTo(0, 1500)")
                 await asyncio.sleep(3)
 
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
                 
-                # 모든 상품 항목(.diff_item)을 가져옵니다.
-                all_items = soup.select(".diff_item")
+                # 1. 모든 상품 리스트를 가져옵니다 (li 또는 div 단위)
+                # 다나와 가격비교 리스트의 공통적인 속성을 모두 뒤집니다.
+                items = soup.select(".diff_item, .product-item, li[id^='productItem']")
                 
-                # --- [핵심 로직] 배송비 텍스트 조건부 필터링 ---
                 right_items = []
-                for item in all_items:
-                    # 배송비 정보가 적힌 태그 찾기
-                    delivery_info = item.select_one(".delivery_base")
-                    delivery_text = delivery_info.get_text() if delivery_info else ""
+                for item in items:
+                    all_text = item.get_text(separator=' ', strip=True)
                     
-                    # 1. "무료"라는 단어가 없고
-                    # 2. "배송비" 또는 "원" 이라는 단어가 포함된 경우만 오른쪽 섹션으로 간주
-                    if "무료" not in delivery_text and ("배송비" in delivery_text or "원" in delivery_text):
-                        right_items.append(item)
+                    # 2. [필터링 법칙]
+                    # - '무료배송' 글자가 없어야 함
+                    # - '배송비' 또는 '원' 글자가 있어야 함
+                    # - 숫자가 포함된 가격 정보가 있어야 함
+                    if "무료배송" not in all_text and ("배송비" in all_text or "별도" in all_text):
+                        price_tag = item.select_one(".prc_c, .price")
+                        if price_tag:
+                            right_items.append(item)
 
-                print(f"   ㄴ [필터링 결과] 유료배송 상품 {len(right_items)}건 발견")
+                print(f"   ㄴ [결과] 유료배송 후보 {len(right_items)}건 발견")
 
                 for i in range(5):
                     if i < len(right_items):
-                        p_tag = right_items[i].select_one(".prc_c")
-                        price = p_tag.get_text().replace(",", "").replace("원", "").strip() if p_tag else "0"
-                        final_matrix[i].append(price)
+                        p_tag = right_items[i].select_one(".prc_c, .price")
+                        # 숫자만 남기고 제거
+                        raw_price = p_tag.get_text()
+                        price = "".join(filter(str.isdigit, raw_price))
+                        final_matrix[i].append(price if price else "0")
                     else:
                         final_matrix[i].append("-")
 
@@ -71,8 +76,8 @@ async def get_danawa_data():
                 print(f"⚠️ {idx}개입 에러: {e}")
                 for i in range(5): final_matrix[i].append("-")
 
-        # --- 구글 시트 저장 ---
-        has_data = any(row[2] != "-" for row in final_matrix)
+        # --- 저장부 ---
+        has_data = any(row[2] != "-" and row[2] != "0" for row in final_matrix)
         if has_data:
             try:
                 creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
@@ -81,11 +86,11 @@ async def get_danawa_data():
                 sh = gc.open_by_key(SH_ID)
                 wks = sh.get_worksheet(0)
                 wks.insert_rows(final_matrix, row=2)
-                print(f"✅ 유료배송 데이터만 정확히 골라내어 기록했습니다!")
+                print(f"✅ 드디어 성공! 시트를 확인하세요.")
             except Exception as e:
-                print(f"❌ 시트 오류: {e}")
+                print(f"❌ 저장 오류: {e}")
         else:
-            print("❌ 조건에 맞는 (유료배송) 데이터를 찾지 못했습니다.")
+            print("❌ 이번에도 실패했습니다. 다나와가 로봇 전용 가짜 페이지를 보여주는 것 같습니다.")
 
         await browser.close()
 
