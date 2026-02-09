@@ -151,11 +151,11 @@ async def main():
             except Exception as e:
                 print(f"   ❌ {tab_name} 시트 작업 오류: {e}")
 
-            # --- [핵심] 상품 간 휴식 시간 (5~10분 랜덤) ---
-            # 마지막 상품이 아니면 대기
+            # --- [수정된 부분] 상품 간 휴식 시간 (1~3분 랜덤) ---
             if tab_name != list(PRODUCTS.keys())[-1]:
-                gap_wait = random.randint(300, 600)
-                print(f"💤 다음 상품 수집 전 {gap_wait // 60}분간 휴식합니다 (차단 방지)...")
+                # 300~600초에서 60~180초로 변경
+                gap_wait = random.randint(60, 180) 
+                print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
                 await asyncio.sleep(gap_wait)
 
         await browser.close()
