@@ -7,11 +7,13 @@ import gspread
 import json
 import os
 
+# [수정포인트 1] 시트 ID와 탭 이름을 본인 것으로 확인하세요!
 SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ" 
+TAB_NAME = "콘드1200" # 시트 하단 탭 이름을 여기에 정확히 적어주세요.
 
 async def get_danawa_data():
-    # 1. 랜덤 대기
-    wait_sec = random.randint(1, 5)
+    # 랜덤 대기 (테스트 시에는 숫자를 줄여서 사용하세요)
+    wait_sec = random.randint(0, 600)
     print(f"🕒 차단 방지를 위해 {wait_sec // 60}분 {wait_sec % 60}초 대기...")
     await asyncio.sleep(wait_sec)
 
@@ -73,22 +75,32 @@ async def get_danawa_data():
             creds = json.loads(creds_raw)
             gc = gspread.service_account_from_dict(creds)
             sh = gc.open_by_key(SH_ID)
-            wks = sh.get_worksheet(0)
+            
+            # [수정포인트 2] 지정한 탭 이름을 사용합니다.
+            wks = sh.worksheet(TAB_NAME)
 
-            # 1. 시트의 이전 데이터(2행~6행) 5줄을 한꺼번에 가져옵니다.
-            # 가격 데이터만 뽑아서 비교하기 위해 C, E, G, I, K, M열만 필터링합니다.
-            last_rows_data = wks.get_all_values()[1:6] # 제목 제외 5줄
+            # 시트 상단 P1 셀에 마지막 체크 시각을 무조건 기록합니다.
+            wks.update_acell('P1', f"마지막 체크: {now_str}")
+
+            # 시트의 이전 데이터(2행~6행) 5줄을 한꺼번에 가져옵니다.
+            rows = wks.get_all_values()
+            last_rows_data = rows[1:6] if len(rows) >= 6 else []
             
             prev_all_prices = []
+            # 이전 가격 인덱스 (C, E, G, I, K, M열 -> 2, 4, 6, 8, 10, 12)
             for row in last_rows_data:
                 row_prices = []
-                for pi in [2, 4, 6, 8, 10, 12]: # C, E, G, I, K, M열
+                for pi in [2, 4, 6, 8, 10, 12]:
                     val = row[pi].replace(",", "") if len(row) > pi else "0"
                     row_prices.append(int(val) if val.isdigit() else 0)
                 prev_all_prices.append(row_prices)
 
-            # 2. 현재 수집한 temp_prices와 이전 prev_all_prices를 비교합니다.
-            is_changed = temp_prices != prev_all_prices
+            # 데이터가 아예 없는 초기 상태 대비 로직
+            if not prev_all_prices:
+                prev_all_prices = [[0]*6 for _ in range(5)]
+
+            # 현재 수집한 temp_prices와 이전 prev_all_prices를 비교
+            is_changed = (temp_prices != prev_all_prices)
 
             if is_changed:
                 # 데이터 재구성 및 기호 적용
@@ -108,12 +120,12 @@ async def get_danawa_data():
                         final_matrix[i].extend([curr_p, diff_val])
                 
                 wks.insert_rows(final_matrix, row=2)
-                print(f"✅ 전체 데이터 중 변동 감지! 시트에 기록했습니다.")
+                print(f"✅ 변동 감지! 시트에 기록 완료 및 체크 시각 업데이트.")
             else:
-                print(f"⏭️ 모든 순위/구성의 가격이 동일함. 기록 건너뜀.")
+                print(f"⏭️ 가격 동일. 기록은 건너뛰고 P1 셀의 체크 시각만 업데이트함.")
 
         except Exception as e:
-            print(f"❌ 오류: {e}")
+            print(f"❌ 오류 발생: {e}")
         await browser.close()
 
 if __name__ == "__main__":
