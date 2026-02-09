@@ -11,7 +11,7 @@ SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
 
 async def get_danawa_data():
     # 1. 랜덤 대기
-    wait_sec = random.randint(0, 1200)
+    wait_sec = random.randint(1, 5)
     print(f"🕒 차단 방지를 위해 {wait_sec // 60}분 {wait_sec % 60}초 대기...")
     await asyncio.sleep(wait_sec)
 
