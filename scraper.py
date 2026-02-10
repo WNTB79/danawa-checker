@@ -50,6 +50,11 @@ PRODUCTS = {
         "https://prod.danawa.com/info/?pcode=94451009", "https://prod.danawa.com/info/?pcode=94451012",
         "https://prod.danawa.com/info/?pcode=94633247", "https://prod.danawa.com/info/?pcode=95053424",
         "https://prod.danawa.com/info/?pcode=95053427", "https://prod.danawa.com/info/?pcode=95053430"
+    ],
+    "마일드센스": [
+        "https://prod.danawa.com/info/?pcode=5490866", "https://prod.danawa.com/info/?pcode=5490869",
+        "https://prod.danawa.com/info/?pcode=6176420", "https://prod.danawa.com/info/?pcode=5940121",
+        "https://prod.danawa.com/info/?pcode=12257999", "https://prod.danawa.com/info/?pcode=5494129"
     ]
 }
 
