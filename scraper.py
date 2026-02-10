@@ -79,116 +79,118 @@ PRODUCTS = {
     ]
 }
 async def collect_product_data(page, urls):
-"한 상품(6개 주소)에 대한 데이터를 수집하는 함수"
-matrix = [[datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{i}위"] for i in range(1, 6)]
-temp_prices = [[] for _ in range(5)]
+    """한 상품(6개 주소)에 대한 데이터를 수집하는 함수"""
+    matrix = [[datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{i}위"] for i in range(1, 6)]
+    temp_prices = [[] for _ in range(5)]
+    
+    for idx, url in enumerate(urls):
+        if not url or url.strip() == "":
+            print(f"    - {idx+1}개입 주소 없음. 건너뜁니다.")
+            for i in range(5):
+                temp_prices[i].append(0)  # 가격 데이터를 0으로 채워서 칸을 맞춤
+            continue
+        
+        try:
+            print(f"    - {idx+1}개입 페이지 분석 중...")
+            await page.goto(url, wait_until="networkidle", timeout=60000)
+            await asyncio.sleep(8)
+            await page.evaluate("window.scrollTo(0, 1500)")
+            await asyncio.sleep(4)
 
-for idx, url in enumerate(urls):
-if not url or url.strip() == "":
-print(f"    - {idx+1}개입 주소 없음. 건너뜁니다.")
-for i in range(5):
-temp_prices[i].append(0)  # 가격 데이터를 0으로 채워서 칸을 맞춤
-continue
-try:
-print(f"   - {idx+1}개입 페이지 분석 중...")
-await page.goto(url, wait_until="networkidle", timeout=60000)
-await asyncio.sleep(8)
-await page.evaluate("window.scrollTo(0, 1500)")
-await asyncio.sleep(4)
+            content = await page.content()
+            soup = BeautifulSoup(content, 'html.parser')
+            items = soup.select(".diff_item, .product-item, li[id^='productItem']")
 
-content = await page.content()
-soup = BeautifulSoup(content, 'html.parser')
-items = soup.select(".diff_item, .product-item, li[id^='productItem']")
+            right_items = []
+            for item in items:
+                all_text = item.get_text(separator=' ', strip=True)
+                if "무료배송" not in all_text and ("배송비" in all_text or "원" in all_text):
+                    if item.select_one(".prc_c, .price"):
+                        right_items.append(item)
 
-right_items = []
-for item in items:
-all_text = item.get_text(separator=' ', strip=True)
-if "무료배송" not in all_text and ("배송비" in all_text or "원" in all_text):
-if item.select_one(".prc_c, .price"):
-right_items.append(item)
+            for i in range(5):
+                if i < len(right_items):
+                    p_tag = right_items[i].select_one(".prc_c, .price")
+                    price = "".join(filter(str.isdigit, p_tag.get_text()))
+                    temp_prices[i].append(int(price) if price else 0)
+                else:
+                    temp_prices[i].append(0)
+        except Exception as e:
+            print(f"    ⚠️ 에러: {e}")
+            for i in range(5): 
+                temp_prices[i].append(0)
 
-for i in range(5):
-if i < len(right_items):
-p_tag = right_items[i].select_one(".prc_c, .price")
-price = "".join(filter(str.isdigit, p_tag.get_text()))
-temp_prices[i].append(int(price) if price else 0)
-else:
-temp_prices[i].append(0)
-except Exception as e:
-print(f"   ⚠️ 에러: {e}")
-for i in range(5): temp_prices[i].append(0)
-
-return matrix, temp_prices
+    return matrix, temp_prices
 
 async def main():
-# 1. 초기 지연 (0~10분)
-start_wait = random.randint(0, 600)
-print(f"🕒 첫 시작 전 {start_wait // 60}분 대기...")
-await asyncio.sleep(start_wait)
+    # 1. 초기 지연 (0~10분)
+    start_wait = random.randint(0, 600)
+    print(f"🕒 첫 시작 전 {start_wait // 60}분 대기...")
+    await asyncio.sleep(start_wait)
 
-async with async_playwright() as p:
-browser = await p.chromium.launch(headless=True)
-context = await browser.new_context(
-viewport={'width': 1920, 'height': 1080},
-user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-)
-page = await context.new_page()
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
 
-creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
-creds = json.loads(creds_raw)
-gc = gspread.service_account_from_dict(creds)
-sh = gc.open_by_key(SH_ID)
+        creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
+        creds = json.loads(creds_raw)
+        gc = gspread.service_account_from_dict(creds)
+        sh = gc.open_by_key(SH_ID)
 
-# 등록된 모든 상품을 하나씩 수집
-for tab_name, urls in PRODUCTS.items():
-print(f"🚀 [{tab_name}] 수집 시작...")
-now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # 등록된 모든 상품을 하나씩 수집
+        for tab_name, urls in PRODUCTS.items():
+            print(f"🚀 [{tab_name}] 수집 시작...")
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-# 수집 실행
-final_matrix, temp_prices = await collect_product_data(page, urls)
+            # 수집 실행
+            final_matrix, temp_prices = await collect_product_data(page, urls)
 
-try:
-wks = sh.worksheet(tab_name)
-wks.update_acell('P1', f"마지막 체크: {now_str}")
+            try:
+                wks = sh.worksheet(tab_name)
+                wks.update_acell('P1', f"마지막 체크: {now_str}")
 
-rows = wks.get_all_values()
-last_rows_data = rows[1:6] if len(rows) >= 6 else []
+                rows = wks.get_all_values()
+                last_rows_data = rows[1:6] if len(rows) >= 6 else []
 
-prev_all_prices = []
-for row in last_rows_data:
-row_prices = []
-for pi in [2, 4, 6, 8, 10, 12]:
-val = row[pi].replace(",", "") if len(row) > pi else "0"
-row_prices.append(int(val) if val.isdigit() else 0)
-prev_all_prices.append(row_prices)
+                prev_all_prices = []
+                for row in last_rows_data:
+                    row_prices = []
+                    for pi in [2, 4, 6, 8, 10, 12]:
+                        val = row[pi].replace(",", "") if len(row) > pi else "0"
+                        row_prices.append(int(val) if val.isdigit() else 0)
+                    prev_all_prices.append(row_prices)
 
-if not prev_all_prices: prev_all_prices = [[0]*6 for _ in range(5)]
+                if not prev_all_prices: 
+                    prev_all_prices = [[0]*6 for _ in range(5)]
 
-if temp_prices != prev_all_prices:
-for i in range(5):
-for col_idx in range(6):
-curr_p = temp_prices[i][col_idx]
-prev_p = prev_all_prices[i][col_idx]
-diff = curr_p - prev_p
-diff_val = f"▲{abs(diff):,}" if diff > 0 else (f"▼{abs(diff):,}" if diff < 0 else "-")
-final_matrix[i].extend([curr_p, diff_val])
+                if temp_prices != prev_all_prices:
+                    for i in range(5):
+                        for col_idx in range(6):
+                            curr_p = temp_prices[i][col_idx]
+                            prev_p = prev_all_prices[i][col_idx]
+                            diff = curr_p - prev_p
+                            diff_val = f"▲{abs(diff):,}" if diff > 0 else (f"▼{abs(diff):,}" if diff < 0 else "-")
+                            final_matrix[i].extend([curr_p, diff_val])
 
-wks.insert_rows(final_matrix, row=2)
-print(f"   ✅ {tab_name} 변동 감지 및 기록 완료.")
-else:
-print(f"   ⏭️ {tab_name} 가격 동일. 건너뜀.")
+                    wks.insert_rows(final_matrix, row=2)
+                    print(f"    ✅ {tab_name} 변동 감지 및 기록 완료.")
+                else:
+                    print(f"    ⏭️ {tab_name} 가격 동일. 건너뜀.")
 
-except Exception as e:
-print(f"   ❌ {tab_name} 시트 작업 오류: {e}")
+            except Exception as e:
+                print(f"    ❌ {tab_name} 시트 작업 오류: {e}")
 
-# --- [수정된 부분] 상품 간 휴식 시간 (1~3분 랜덤) ---
-if tab_name != list(PRODUCTS.keys())[-1]:
-# 300~600초에서 60~180초로 변경
-gap_wait = random.randint(60, 180)
-print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
-await asyncio.sleep(gap_wait)
+            # --- 상품 간 휴식 시간 (1~3분 랜덤) ---
+            if tab_name != list(PRODUCTS.keys())[-1]:
+                gap_wait = random.randint(60, 180)
+                print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
+                await asyncio.sleep(gap_wait)
 
-await browser.close()
+        await browser.close()
 
 if __name__ == "__main__":
-asyncio.run(main())
+    asyncio.run(main()) # 여기만 한 칸(4스페이스) 들여쓰기!
