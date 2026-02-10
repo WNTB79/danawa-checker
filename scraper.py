@@ -103,7 +103,9 @@ async def collect_product_data(page, urls):
             all_items = soup.select(".diff_item, .product-item, li[id^='productItem']")
             found_rank = "권외"
             for rank, item in enumerate(all_items, 1):
-                if "WLd" in item.get_text(): # 상품명에 WLd가 포함되어 있다면
+                # 모든 텍스트를 소문자로 바꿔서 비교 (wld, WLD, WLd 모두 감지)
+                item_text = item.get_text().lower() 
+                if "wld" in item_text:
                     found_rank = f"{rank}위"
                     break
             my_ranks.append(found_rank)
