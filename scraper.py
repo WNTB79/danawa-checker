@@ -79,18 +79,18 @@ PRODUCTS = {
     ]
 }
 async def collect_product_data(page, urls):
-    """한 상품(6개 주소)에 대한 데이터를 수집하는 함수"""
     matrix = [[datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{i}위"] for i in range(1, 6)]
     temp_prices = [[] for _ in range(5)]
+    my_ranks = []  # 내 제품 순위를 담을 리스트 추가
 
     for idx, url in enumerate(urls):
         if not url or url.strip() == "":
-            print(f"    - {idx+1}개입 주소 없음. 건너뜁니다.")
-            for i in range(5): 
-                temp_prices[i].append(0)  # 가격 데이터를 0으로 채워서 칸을 맞춤
+            for i in range(5): temp_prices[i].append(0)
+            my_ranks.append("-") # 주소 없으면 "-"
             continue
+
         try:
-            print(f"   - {idx+1}개입 페이지 분석 중...")
+            print(f"    - {idx+1}개입 페이지 분석 중...")
             await page.goto(url, wait_until="networkidle", timeout=60000)
             await asyncio.sleep(8)
             await page.evaluate("window.scrollTo(0, 1500)")
@@ -98,8 +98,18 @@ async def collect_product_data(page, urls):
 
             content = await page.content()
             soup = BeautifulSoup(content, 'html.parser')
-            items = soup.select(".diff_item, .product-item, li[id^='productItem']")
             
+            # --- [내 순위 찾기 로직 추가] ---
+            all_items = soup.select(".diff_item, .product-item, li[id^='productItem']")
+            found_rank = "권외"
+            for rank, item in enumerate(all_items, 1):
+                if "WLd" in item.get_text(): # 상품명에 WLd가 포함되어 있다면
+                    found_rank = f"{rank}위"
+                    break
+            my_ranks.append(found_rank)
+            # ------------------------------
+
+            items = soup.select(".diff_item, .product-item, li[id^='productItem']")
             right_items = []
             for item in items:
                 all_text = item.get_text(separator=' ', strip=True)
@@ -115,10 +125,11 @@ async def collect_product_data(page, urls):
                 else:
                     temp_prices[i].append(0)
         except Exception as e:
-            print(f"   ⚠️ 에러: {e}")
+            print(f"    ⚠️ 에러: {e}")
+            my_ranks.append("에러")
             for i in range(5): temp_prices[i].append(0)
     
-    return matrix, temp_prices
+    return matrix, temp_prices, my_ranks # my_ranks를 추가로 반환
 
 async def main():
     # 1. 초기 지연 (0~10분)
@@ -150,6 +161,16 @@ async def main():
             try:
                 wks = sh.worksheet(tab_name)
                 wks.update_acell('P1', f"마지막 체크: {now_str}")
+
+                rank_cells = ['C1', 'E1', 'G1', 'I1', 'K1', 'M1']
+                rank_updates = []
+                for idx, rank_val in enumerate(my_ranks):
+                    # 1개입 (3위) 같은 형식으로 텍스트 만듦
+                    display_text = f"{idx+1}개입 ({rank_val})"
+                    rank_updates.append({'range': rank_cells[idx], 'values': [[display_text]]})
+                
+                # 시트의 1행(C1, E1...)에 순위 한꺼번에 업데이트
+                wks.batch_update(rank_updates)
                 
                 rows = wks.get_all_values()
                 last_rows_data = rows[1:6] if len(rows) >= 6 else []
