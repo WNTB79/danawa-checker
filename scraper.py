@@ -156,7 +156,7 @@ async def main():
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
             # 수집 실행
-            final_matrix, temp_prices = await collect_product_data(page, urls)
+            final_matrix, temp_prices, my_ranks = await collect_product_data(page, urls)
             
             try:
                 wks = sh.worksheet(tab_name)
