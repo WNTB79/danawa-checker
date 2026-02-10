@@ -101,15 +101,18 @@ async def collect_product_data(page, urls):
             
             # --- [내 순위 찾기 로직 추가] ---
             all_items = soup.select("#productListArea table.product_list tr.diff_item")
+            # --- [내 순위 찾기 로직: 수집된 5위 내에서만 검색] ---
             found_rank = "권외"
-            for rank, item in enumerate(all_items, 1):
-                # 모든 텍스트를 소문자로 바꿔서 비교 (wld, WLD, WLd 모두 감지)
-                item_text = item.get_text().lower() 
-                if "wld" in item_text:
+            # final_matrix에는 [가격, 변동]이 순서대로 들어있으므로 
+            # 0, 2, 4, 6, 8번째 인덱스가 각 업체의 가격 정보입니다.
+            for rank, row in enumerate(final_matrix, 1):
+                # 업체명이나 상품명 텍스트에 "wld"가 있는지 확인
+                # item_text는 수집 시점에 이미 소문자로 변환해서 비교하는 것이 안전합니다.
+                if "wld" in str(row).lower(): 
                     found_rank = f"{rank}위"
                     break
             my_ranks.append(found_rank)
-            # ------------------------------
+            # ----------------------------------------------
 
             items = soup.select(".diff_item, .product-item, li[id^='productItem']")
             right_items = []
