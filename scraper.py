@@ -78,8 +78,6 @@ PRODUCTS = {
         "https://prod.danawa.com/info/?pcode=95844491"
     ]
 }
-}
-
 async def collect_product_data(page, urls):
     """한 상품(6개 주소)에 대한 데이터를 수집하는 함수"""
     matrix = [[datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{i}위"] for i in range(1, 6)]
