@@ -11,72 +11,72 @@ SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
 
 # [상품 리스트 정의] 탭이름: [1개, 2개, 3개, 4개, 5개, 6개 주소]
 PRODUCTS = {
-콘드1200: [
-https://prod.danawa.com/info/?pcode=13412984, "https://prod.danawa.com/info/?pcode=13413059",
-https://prod.danawa.com/info/?pcode=13413086, "https://prod.danawa.com/info/?pcode=13413254",
-https://prod.danawa.com/info/?pcode=13678937, "https://prod.danawa.com/info/?pcode=13413314"
-],
-MBP: [
-https://prod.danawa.com/info/?pcode=11901550, "https://prod.danawa.com/info/?pcode=11901592",
-https://prod.danawa.com/info/?pcode=11901679, "https://prod.danawa.com/info/?pcode=11901682",
-https://prod.danawa.com/info/?pcode=12005351, "https://prod.danawa.com/info/?pcode=11901862"
-],
-덴마크유산균: [
-https://prod.danawa.com/info/?pcode=4087011, "https://prod.danawa.com/info/?pcode=4491609",
-https://prod.danawa.com/info/?pcode=4491621, "https://prod.danawa.com/info/?pcode=4491644",
-https://prod.danawa.com/info/?pcode=14863700, "https://prod.danawa.com/info/?pcode=4491661"
-],
-난각막: [
-https://prod.danawa.com/info/?pcode=67605707, "https://prod.danawa.com/info/?pcode=67605761",
-https://prod.danawa.com/info/?pcode=67605812, "https://prod.danawa.com/info/?pcode=67605743",
-https://prod.danawa.com/info/?pcode=67605716, "https://prod.danawa.com/info/?pcode=67605794"
-],
-폴리5: [
-https://prod.danawa.com/info/?pcode=3742572, "https://prod.danawa.com/info/?pcode=3966366",
-https://prod.danawa.com/info/?pcode=3966388, "https://prod.danawa.com/info/?pcode=8373021",
-https://prod.danawa.com/info/?pcode=11003949, "https://prod.danawa.com/info/?pcode=5711776"
-],
-폴리20: [
-https://prod.danawa.com/info/?pcode=13249364, "https://prod.danawa.com/info/?pcode=13249382",
-https://prod.danawa.com/info/?pcode=13249388, "https://prod.danawa.com/info/?pcode=13249391",
-https://prod.danawa.com/info/?pcode=13249409, "https://prod.danawa.com/info/?pcode=13249415"
-],
-파비플로라: [
-https://prod.danawa.com/info/?pcode=72980105, "https://prod.danawa.com/info/?pcode=73069886",
-https://prod.danawa.com/info/?pcode=73069745, "https://prod.danawa.com/info/?pcode=73069754",
-https://prod.danawa.com/info/?pcode=73069682, "https://prod.danawa.com/info/?pcode=73069688"
-],
-알부민: [
-https://prod.danawa.com/info/?pcode=94451009, "https://prod.danawa.com/info/?pcode=94451012",
-https://prod.danawa.com/info/?pcode=94633247, "https://prod.danawa.com/info/?pcode=95053424",
-https://prod.danawa.com/info/?pcode=95053427, "https://prod.danawa.com/info/?pcode=95053430"
-],
-마일드센스: [
-https://prod.danawa.com/info/?pcode=5490866, "https://prod.danawa.com/info/?pcode=5490869",
-https://prod.danawa.com/info/?pcode=6176420, "https://prod.danawa.com/info/?pcode=5940121",
-https://prod.danawa.com/info/?pcode=12257999, "https://prod.danawa.com/info/?pcode=5494129"
-],
-모발콜라겐: [
-https://prod.danawa.com/info/?pcode=99916118, "https://prod.danawa.com/info/?pcode=101537498",
-https://prod.danawa.com/info/?pcode=99932609, "https://prod.danawa.com/info/?pcode=102881819",
-https://prod.danawa.com/info/?pcode=102906824, "https://prod.danawa.com/info/?pcode=99932594"
-],
-파이토에스5X: [
-https://prod.danawa.com/info/?pcode=77055365, "https://prod.danawa.com/info/?pcode=77120243",
-https://prod.danawa.com/info/?pcode=77120234, "https://prod.danawa.com/info/?pcode=77120252",
-https://prod.danawa.com/info/?pcode=77120219, "https://prod.danawa.com/info/?pcode=77120225"
-],
-팻버닝: [
-https://prod.danawa.com/info/?pcode=48472010, "https://prod.danawa.com/info/?pcode=48470330",
-https://prod.danawa.com/info/?pcode=48470333, "https://prod.danawa.com/info/?pcode=54955844",
-https://prod.danawa.com/info/?pcode=54955763, "https://prod.danawa.com/info/?pcode=54955907"
-],
-이알하나: [
-,  # 1개입 없음 (빈 주소)
-https://prod.danawa.com/info/?pcode=95287346, "https://prod.danawa.com/info/?pcode=103235279",
-https://prod.danawa.com/info/?pcode=95287376, "https://prod.danawa.com/info/?pcode=95844494",
-https://prod.danawa.com/info/?pcode=95844491
-]
+    "콘드1200": [
+        "https://prod.danawa.com/info/?pcode=13412984", "https://prod.danawa.com/info/?pcode=13413059",
+        "https://prod.danawa.com/info/?pcode=13413086", "https://prod.danawa.com/info/?pcode=13413254",
+        "https://prod.danawa.com/info/?pcode=13678937", "https://prod.danawa.com/info/?pcode=13413314"
+    ],
+    "MBP": [
+        "https://prod.danawa.com/info/?pcode=11901550", "https://prod.danawa.com/info/?pcode=11901592",
+        "https://prod.danawa.com/info/?pcode=11901679", "https://prod.danawa.com/info/?pcode=11901682",
+        "https://prod.danawa.com/info/?pcode=12005351", "https://prod.danawa.com/info/?pcode=11901862"
+    ],
+    "덴마크유산균": [
+        "https://prod.danawa.com/info/?pcode=4087011", "https://prod.danawa.com/info/?pcode=4491609",
+        "https://prod.danawa.com/info/?pcode=4491621", "https://prod.danawa.com/info/?pcode=4491644",
+        "https://prod.danawa.com/info/?pcode=14863700", "https://prod.danawa.com/info/?pcode=4491661"
+    ],
+    "난각막": [
+        "https://prod.danawa.com/info/?pcode=67605707", "https://prod.danawa.com/info/?pcode=67605761",
+        "https://prod.danawa.com/info/?pcode=67605812", "https://prod.danawa.com/info/?pcode=67605743",
+        "https://prod.danawa.com/info/?pcode=67605716", "https://prod.danawa.com/info/?pcode=67605794"
+    ],
+    "폴리5": [
+        "https://prod.danawa.com/info/?pcode=3742572", "https://prod.danawa.com/info/?pcode=3966366",
+        "https://prod.danawa.com/info/?pcode=3966388", "https://prod.danawa.com/info/?pcode=8373021",
+        "https://prod.danawa.com/info/?pcode=11003949", "https://prod.danawa.com/info/?pcode=5711776"
+    ],
+    "폴리20": [
+        "https://prod.danawa.com/info/?pcode=13249364", "https://prod.danawa.com/info/?pcode=13249382",
+        "https://prod.danawa.com/info/?pcode=13249388", "https://prod.danawa.com/info/?pcode=13249391",
+        "https://prod.danawa.com/info/?pcode=13249409", "https://prod.danawa.com/info/?pcode=13249415"
+    ],
+    "파비플로라": [
+        "https://prod.danawa.com/info/?pcode=72980105", "https://prod.danawa.com/info/?pcode=73069886",
+        "https://prod.danawa.com/info/?pcode=73069745", "https://prod.danawa.com/info/?pcode=73069754",
+        "https://prod.danawa.com/info/?pcode=73069682", "https://prod.danawa.com/info/?pcode=73069688"
+    ],
+    "알부민": [
+        "https://prod.danawa.com/info/?pcode=94451009", "https://prod.danawa.com/info/?pcode=94451012",
+        "https://prod.danawa.com/info/?pcode=94633247", "https://prod.danawa.com/info/?pcode=95053424",
+        "https://prod.danawa.com/info/?pcode=95053427", "https://prod.danawa.com/info/?pcode=95053430"
+    ],
+    "마일드센스": [
+        "https://prod.danawa.com/info/?pcode=5490866", "https://prod.danawa.com/info/?pcode=5490869",
+        "https://prod.danawa.com/info/?pcode=6176420", "https://prod.danawa.com/info/?pcode=5940121",
+        "https://prod.danawa.com/info/?pcode=12257999", "https://prod.danawa.com/info/?pcode=5494129"
+    ],
+    "모발콜라겐": [
+        "https://prod.danawa.com/info/?pcode=99916118", "https://prod.danawa.com/info/?pcode=101537498",
+        "https://prod.danawa.com/info/?pcode=99932609", "https://prod.danawa.com/info/?pcode=102881819",
+        "https://prod.danawa.com/info/?pcode=102906824", "https://prod.danawa.com/info/?pcode=99932594"
+    ],
+    "파이토에스5X": [
+        "https://prod.danawa.com/info/?pcode=77055365", "https://prod.danawa.com/info/?pcode=77120243",
+        "https://prod.danawa.com/info/?pcode=77120234", "https://prod.danawa.com/info/?pcode=77120252",
+        "https://prod.danawa.com/info/?pcode=77120219", "https://prod.danawa.com/info/?pcode=77120225"
+    ],
+    "팻버닝": [
+        "https://prod.danawa.com/info/?pcode=48472010", "https://prod.danawa.com/info/?pcode=48470330",
+        "https://prod.danawa.com/info/?pcode=48470333", "https://prod.danawa.com/info/?pcode=54955844",
+        "https://prod.danawa.com/info/?pcode=54955763", "https://prod.danawa.com/info/?pcode=54955907"
+    ],
+    "이알하나": [
+        "", # 1개입 없음 (빈 주소)
+        "https://prod.danawa.com/info/?pcode=95287346", "https://prod.danawa.com/info/?pcode=103235279",
+        "https://prod.danawa.com/info/?pcode=95287376", "https://prod.danawa.com/info/?pcode=95844494",
+        "https://prod.danawa.com/info/?pcode=95844491"
+    ]
 }
 async def collect_product_data(page, urls):
 "한 상품(6개 주소)에 대한 데이터를 수집하는 함수"
