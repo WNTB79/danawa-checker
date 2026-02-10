@@ -100,7 +100,7 @@ async def collect_product_data(page, urls):
             soup = BeautifulSoup(content, 'html.parser')
             
             # --- [내 순위 찾기 로직 추가] ---
-            all_items = soup.select(".diff_item, .product-item, li[id^='productItem']")
+            all_items = soup.select("#productListArea table.product_list tr.diff_item")
             found_rank = "권외"
             for rank, item in enumerate(all_items, 1):
                 # 모든 텍스트를 소문자로 바꿔서 비교 (wld, WLD, WLd 모두 감지)
