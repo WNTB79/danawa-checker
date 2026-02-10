@@ -55,7 +55,29 @@ PRODUCTS = {
         "https://prod.danawa.com/info/?pcode=5490866", "https://prod.danawa.com/info/?pcode=5490869",
         "https://prod.danawa.com/info/?pcode=6176420", "https://prod.danawa.com/info/?pcode=5940121",
         "https://prod.danawa.com/info/?pcode=12257999", "https://prod.danawa.com/info/?pcode=5494129"
+    ],
+    "모발콜라겐": [
+        "https://prod.danawa.com/info/?pcode=99916118", "https://prod.danawa.com/info/?pcode=101537498",
+        "https://prod.danawa.com/info/?pcode=99932609", "https://prod.danawa.com/info/?pcode=102881819",
+        "https://prod.danawa.com/info/?pcode=102906824", "https://prod.danawa.com/info/?pcode=99932594"
+    ],
+    "파이토에스5X": [
+        "https://prod.danawa.com/info/?pcode=77055365", "https://prod.danawa.com/info/?pcode=77120243",
+        "https://prod.danawa.com/info/?pcode=77120234", "https://prod.danawa.com/info/?pcode=77120252",
+        "https://prod.danawa.com/info/?pcode=77120219", "https://prod.danawa.com/info/?pcode=77120225"
+    ],
+    "팻버닝": [
+        "https://prod.danawa.com/info/?pcode=48472010", "https://prod.danawa.com/info/?pcode=48470330",
+        "https://prod.danawa.com/info/?pcode=48470333", "https://prod.danawa.com/info/?pcode=54955844",
+        "https://prod.danawa.com/info/?pcode=54955763", "https://prod.danawa.com/info/?pcode=54955907"
+    ],
+    "이알하나": [
+        "",  # 1개입 없음 (빈 주소)
+        "https://prod.danawa.com/info/?pcode=95287346", "https://prod.danawa.com/info/?pcode=103235279",
+        "https://prod.danawa.com/info/?pcode=95287376", "https://prod.danawa.com/info/?pcode=95844494",
+        "https://prod.danawa.com/info/?pcode=95844491"
     ]
+}
 }
 
 async def collect_product_data(page, urls):
@@ -64,6 +86,11 @@ async def collect_product_data(page, urls):
     temp_prices = [[] for _ in range(5)]
 
     for idx, url in enumerate(urls):
+        if not url or url.strip() == "":
+            print(f"    - {idx+1}개입 주소 없음. 건너뜁니다.")
+            for i in range(5): 
+                temp_prices[i].append(0)  # 가격 데이터를 0으로 채워서 칸을 맞춤
+            continue
         try:
             print(f"   - {idx+1}개입 페이지 분석 중...")
             await page.goto(url, wait_until="networkidle", timeout=60000)
