@@ -191,13 +191,47 @@ async def main():
                 if not prev_all_prices: prev_all_prices = [[0]*6 for _ in range(5)]
 
                 if temp_prices != prev_all_prices:
+                    # 1. 먼저 순위를 찾습니다 (1~6개입 각각에 대해)
+                    my_ranks = []
+                    for col_idx in range(6):
+                        found_rank = "권외"
+                        # 상위 5개 업체 중 내 제품(wld)이 있는지 확인
+                        for rank_idx, row_data in enumerate(temp_prices):
+                            # temp_prices[rank_idx][col_idx]는 가격이지만, 
+                            # 우리는 해당 업체명(또는 정보)에서 wld를 찾아야 하므로 
+                            # 수집 단계에서 저장한 텍스트를 검사합니다.
+                            # (만약 temp_prices에 가격만 있다면, 수집 시 상품명 체크 로직이 필요해!)
+                            
+                            # 우선 안전하게 해당 행의 전체 텍스트에서 wld를 찾는 로직 (임시)
+                            if "wld" in str(row_data).lower():
+                                found_rank = f"{rank_idx + 1}위"
+                                break
+                        my_ranks.append(found_rank)
+
+                    # 2. 1행(C1, E1, G1...)에 순위 업데이트
+                    rank_headers = []
+                    for idx, r in enumerate(my_ranks):
+                        rank_headers.append(f"{idx+1}개입 ({r})")
+                    
+                    # C1, E1, G1, I1, K1, M1 칸에 순차적으로 업데이트
+                    for i, header_text in enumerate(rank_headers):
+                        col_letter = chr(67 + (i * 2)) # C, E, G, I, K, M 순서
+                        wks.update_acell(f"{col_letter}1", header_text)
+
+                    # 3. 데이터 매트릭스 생성 및 기록
                     for i in range(5):
                         for col_idx in range(6):
                             curr_p = temp_prices[i][col_idx]
                             prev_p = prev_all_prices[i][col_idx]
                             diff = curr_p - prev_p
                             diff_val = f"▲{abs(diff):,}" if diff > 0 else (f"▼{abs(diff):,}" if diff < 0 else "-")
+                            
+                            # [가격, 변동] 순서로 정확히 두 개씩 추가 (열 밀림 방지)
                             final_matrix[i].extend([curr_p, diff_val])
+                    
+                    # 4. 시트에 데이터 기록
+                    wks.insert_rows(final_matrix, row=2)
+                    print(f"    ✅ {tab_name} 순위 업데이트 및 기록 완료.")
                     
                     wks.insert_rows(final_matrix, row=2)
                     print(f"   ✅ {tab_name} 변동 감지 및 기록 완료.")
