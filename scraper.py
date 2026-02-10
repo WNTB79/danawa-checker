@@ -7,233 +7,188 @@ import gspread
 import json
 import os
 
-SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ" 
+SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
 
 # [상품 리스트 정의] 탭이름: [1개, 2개, 3개, 4개, 5개, 6개 주소]
 PRODUCTS = {
-    "콘드1200": [
-        "https://prod.danawa.com/info/?pcode=13412984", "https://prod.danawa.com/info/?pcode=13413059",
-        "https://prod.danawa.com/info/?pcode=13413086", "https://prod.danawa.com/info/?pcode=13413254",
-        "https://prod.danawa.com/info/?pcode=13678937", "https://prod.danawa.com/info/?pcode=13413314"
-    ],
-    "MBP": [
-        "https://prod.danawa.com/info/?pcode=11901550", "https://prod.danawa.com/info/?pcode=11901592",
-        "https://prod.danawa.com/info/?pcode=11901679", "https://prod.danawa.com/info/?pcode=11901682",
-        "https://prod.danawa.com/info/?pcode=12005351", "https://prod.danawa.com/info/?pcode=11901862"
-    ],
-    "덴마크유산균": [
-        "https://prod.danawa.com/info/?pcode=4087011", "https://prod.danawa.com/info/?pcode=4491609",
-        "https://prod.danawa.com/info/?pcode=4491621", "https://prod.danawa.com/info/?pcode=4491644",
-        "https://prod.danawa.com/info/?pcode=14863700", "https://prod.danawa.com/info/?pcode=4491661"
-    ],
-    "난각막": [
-        "https://prod.danawa.com/info/?pcode=67605707", "https://prod.danawa.com/info/?pcode=67605761",
-        "https://prod.danawa.com/info/?pcode=67605812", "https://prod.danawa.com/info/?pcode=67605743",
-        "https://prod.danawa.com/info/?pcode=67605716", "https://prod.danawa.com/info/?pcode=67605794"
-    ],
-    "폴리5": [
-        "https://prod.danawa.com/info/?pcode=3742572", "https://prod.danawa.com/info/?pcode=3966366",
-        "https://prod.danawa.com/info/?pcode=3966388", "https://prod.danawa.com/info/?pcode=8373021",
-        "https://prod.danawa.com/info/?pcode=11003949", "https://prod.danawa.com/info/?pcode=5711776"
-    ],
-    "폴리20": [
-        "https://prod.danawa.com/info/?pcode=13249364", "https://prod.danawa.com/info/?pcode=13249382",
-        "https://prod.danawa.com/info/?pcode=13249388", "https://prod.danawa.com/info/?pcode=13249391",
-        "https://prod.danawa.com/info/?pcode=13249409", "https://prod.danawa.com/info/?pcode=13249415"
-    ],
-    "파비플로라": [
-        "https://prod.danawa.com/info/?pcode=72980105", "https://prod.danawa.com/info/?pcode=73069886",
-        "https://prod.danawa.com/info/?pcode=73069745", "https://prod.danawa.com/info/?pcode=73069754",
-        "https://prod.danawa.com/info/?pcode=73069682", "https://prod.danawa.com/info/?pcode=73069688"
-    ],
-    "알부민": [
-        "https://prod.danawa.com/info/?pcode=94451009", "https://prod.danawa.com/info/?pcode=94451012",
-        "https://prod.danawa.com/info/?pcode=94633247", "https://prod.danawa.com/info/?pcode=95053424",
-        "https://prod.danawa.com/info/?pcode=95053427", "https://prod.danawa.com/info/?pcode=95053430"
-    ],
-    "마일드센스": [
-        "https://prod.danawa.com/info/?pcode=5490866", "https://prod.danawa.com/info/?pcode=5490869",
-        "https://prod.danawa.com/info/?pcode=6176420", "https://prod.danawa.com/info/?pcode=5940121",
-        "https://prod.danawa.com/info/?pcode=12257999", "https://prod.danawa.com/info/?pcode=5494129"
-    ],
-    "모발콜라겐": [
-        "https://prod.danawa.com/info/?pcode=99916118", "https://prod.danawa.com/info/?pcode=101537498",
-        "https://prod.danawa.com/info/?pcode=99932609", "https://prod.danawa.com/info/?pcode=102881819",
-        "https://prod.danawa.com/info/?pcode=102906824", "https://prod.danawa.com/info/?pcode=99932594"
-    ],
-    "파이토에스5X": [
-        "https://prod.danawa.com/info/?pcode=77055365", "https://prod.danawa.com/info/?pcode=77120243",
-        "https://prod.danawa.com/info/?pcode=77120234", "https://prod.danawa.com/info/?pcode=77120252",
-        "https://prod.danawa.com/info/?pcode=77120219", "https://prod.danawa.com/info/?pcode=77120225"
-    ],
-    "팻버닝": [
-        "https://prod.danawa.com/info/?pcode=48472010", "https://prod.danawa.com/info/?pcode=48470330",
-        "https://prod.danawa.com/info/?pcode=48470333", "https://prod.danawa.com/info/?pcode=54955844",
-        "https://prod.danawa.com/info/?pcode=54955763", "https://prod.danawa.com/info/?pcode=54955907"
-    ],
-    "이알하나": [
-        "",  # 1개입 없음 (빈 주소)
-        "https://prod.danawa.com/info/?pcode=95287346", "https://prod.danawa.com/info/?pcode=103235279",
-        "https://prod.danawa.com/info/?pcode=95287376", "https://prod.danawa.com/info/?pcode=95844494",
-        "https://prod.danawa.com/info/?pcode=95844491"
-    ]
+콘드1200: [
+https://prod.danawa.com/info/?pcode=13412984, "https://prod.danawa.com/info/?pcode=13413059",
+https://prod.danawa.com/info/?pcode=13413086, "https://prod.danawa.com/info/?pcode=13413254",
+https://prod.danawa.com/info/?pcode=13678937, "https://prod.danawa.com/info/?pcode=13413314"
+],
+MBP: [
+https://prod.danawa.com/info/?pcode=11901550, "https://prod.danawa.com/info/?pcode=11901592",
+https://prod.danawa.com/info/?pcode=11901679, "https://prod.danawa.com/info/?pcode=11901682",
+https://prod.danawa.com/info/?pcode=12005351, "https://prod.danawa.com/info/?pcode=11901862"
+],
+덴마크유산균: [
+https://prod.danawa.com/info/?pcode=4087011, "https://prod.danawa.com/info/?pcode=4491609",
+https://prod.danawa.com/info/?pcode=4491621, "https://prod.danawa.com/info/?pcode=4491644",
+https://prod.danawa.com/info/?pcode=14863700, "https://prod.danawa.com/info/?pcode=4491661"
+],
+난각막: [
+https://prod.danawa.com/info/?pcode=67605707, "https://prod.danawa.com/info/?pcode=67605761",
+https://prod.danawa.com/info/?pcode=67605812, "https://prod.danawa.com/info/?pcode=67605743",
+https://prod.danawa.com/info/?pcode=67605716, "https://prod.danawa.com/info/?pcode=67605794"
+],
+폴리5: [
+https://prod.danawa.com/info/?pcode=3742572, "https://prod.danawa.com/info/?pcode=3966366",
+https://prod.danawa.com/info/?pcode=3966388, "https://prod.danawa.com/info/?pcode=8373021",
+https://prod.danawa.com/info/?pcode=11003949, "https://prod.danawa.com/info/?pcode=5711776"
+],
+폴리20: [
+https://prod.danawa.com/info/?pcode=13249364, "https://prod.danawa.com/info/?pcode=13249382",
+https://prod.danawa.com/info/?pcode=13249388, "https://prod.danawa.com/info/?pcode=13249391",
+https://prod.danawa.com/info/?pcode=13249409, "https://prod.danawa.com/info/?pcode=13249415"
+],
+파비플로라: [
+https://prod.danawa.com/info/?pcode=72980105, "https://prod.danawa.com/info/?pcode=73069886",
+https://prod.danawa.com/info/?pcode=73069745, "https://prod.danawa.com/info/?pcode=73069754",
+https://prod.danawa.com/info/?pcode=73069682, "https://prod.danawa.com/info/?pcode=73069688"
+],
+알부민: [
+https://prod.danawa.com/info/?pcode=94451009, "https://prod.danawa.com/info/?pcode=94451012",
+https://prod.danawa.com/info/?pcode=94633247, "https://prod.danawa.com/info/?pcode=95053424",
+https://prod.danawa.com/info/?pcode=95053427, "https://prod.danawa.com/info/?pcode=95053430"
+],
+마일드센스: [
+https://prod.danawa.com/info/?pcode=5490866, "https://prod.danawa.com/info/?pcode=5490869",
+https://prod.danawa.com/info/?pcode=6176420, "https://prod.danawa.com/info/?pcode=5940121",
+https://prod.danawa.com/info/?pcode=12257999, "https://prod.danawa.com/info/?pcode=5494129"
+],
+모발콜라겐: [
+https://prod.danawa.com/info/?pcode=99916118, "https://prod.danawa.com/info/?pcode=101537498",
+https://prod.danawa.com/info/?pcode=99932609, "https://prod.danawa.com/info/?pcode=102881819",
+https://prod.danawa.com/info/?pcode=102906824, "https://prod.danawa.com/info/?pcode=99932594"
+],
+파이토에스5X: [
+https://prod.danawa.com/info/?pcode=77055365, "https://prod.danawa.com/info/?pcode=77120243",
+https://prod.danawa.com/info/?pcode=77120234, "https://prod.danawa.com/info/?pcode=77120252",
+https://prod.danawa.com/info/?pcode=77120219, "https://prod.danawa.com/info/?pcode=77120225"
+],
+팻버닝: [
+https://prod.danawa.com/info/?pcode=48472010, "https://prod.danawa.com/info/?pcode=48470330",
+https://prod.danawa.com/info/?pcode=48470333, "https://prod.danawa.com/info/?pcode=54955844",
+https://prod.danawa.com/info/?pcode=54955763, "https://prod.danawa.com/info/?pcode=54955907"
+],
+이알하나: [
+,  # 1개입 없음 (빈 주소)
+https://prod.danawa.com/info/?pcode=95287346, "https://prod.danawa.com/info/?pcode=103235279",
+https://prod.danawa.com/info/?pcode=95287376, "https://prod.danawa.com/info/?pcode=95844494",
+https://prod.danawa.com/info/?pcode=95844491
+]
 }
 async def collect_product_data(page, urls):
-    matrix = [[datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{i}위"] for i in range(1, 6)]
-    temp_prices = [[] for _ in range(5)]
-    my_ranks = []  # 내 제품 순위를 담을 리스트 추가
+"한 상품(6개 주소)에 대한 데이터를 수집하는 함수"
+matrix = [[datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{i}위"] for i in range(1, 6)]
+temp_prices = [[] for _ in range(5)]
 
-    for idx, url in enumerate(urls):
-        if not url or url.strip() == "":
-            for i in range(5): temp_prices[i].append(0)
-            my_ranks.append("-") # 주소 없으면 "-"
-            continue
+for idx, url in enumerate(urls):
+if not url or url.strip() == "":
+print(f"    - {idx+1}개입 주소 없음. 건너뜁니다.")
+for i in range(5):
+temp_prices[i].append(0)  # 가격 데이터를 0으로 채워서 칸을 맞춤
+continue
+try:
+print(f"   - {idx+1}개입 페이지 분석 중...")
+await page.goto(url, wait_until="networkidle", timeout=60000)
+await asyncio.sleep(8)
+await page.evaluate("window.scrollTo(0, 1500)")
+await asyncio.sleep(4)
 
-        try:
-            print(f"    - {idx+1}개입 페이지 분석 중...")
-            await page.goto(url, wait_until="networkidle", timeout=60000)
-            await asyncio.sleep(8)
-            await page.evaluate("window.scrollTo(0, 1500)")
-            await asyncio.sleep(4)
+content = await page.content()
+soup = BeautifulSoup(content, 'html.parser')
+items = soup.select(".diff_item, .product-item, li[id^='productItem']")
 
-            content = await page.content()
-            soup = BeautifulSoup(content, 'html.parser')
-            
-            # --- [내 순위 찾기 로직 추가] ---
-            all_items = soup.select("#productListArea table.product_list tr.diff_item")
-            # --- [내 순위 찾기 로직: 수집된 5위 내에서만 검색] ---
-            found_rank = "권외"
-            # final_matrix에는 [가격, 변동]이 순서대로 들어있으므로 
-            # 0, 2, 4, 6, 8번째 인덱스가 각 업체의 가격 정보입니다.
-            for rank, row in enumerate(final_matrix, 1):
-                # 업체명이나 상품명 텍스트에 "wld"가 있는지 확인
-                # item_text는 수집 시점에 이미 소문자로 변환해서 비교하는 것이 안전합니다.
-                if "wld" in str(row).lower(): 
-                    found_rank = f"{rank}위"
-                    break
-            my_ranks.append(found_rank)
-            # ----------------------------------------------
+right_items = []
+for item in items:
+all_text = item.get_text(separator=' ', strip=True)
+if "무료배송" not in all_text and ("배송비" in all_text or "원" in all_text):
+if item.select_one(".prc_c, .price"):
+right_items.append(item)
 
-            items = soup.select(".diff_item, .product-item, li[id^='productItem']")
-            right_items = []
-            for item in items:
-                all_text = item.get_text(separator=' ', strip=True)
-                if "무료배송" not in all_text and ("배송비" in all_text or "원" in all_text):
-                    if item.select_one(".prc_c, .price"):
-                        right_items.append(item)
+for i in range(5):
+if i < len(right_items):
+p_tag = right_items[i].select_one(".prc_c, .price")
+price = "".join(filter(str.isdigit, p_tag.get_text()))
+temp_prices[i].append(int(price) if price else 0)
+else:
+temp_prices[i].append(0)
+except Exception as e:
+print(f"   ⚠️ 에러: {e}")
+for i in range(5): temp_prices[i].append(0)
 
-            for i in range(5):
-                if i < len(right_items):
-                    p_tag = right_items[i].select_one(".prc_c, .price")
-                    price = "".join(filter(str.isdigit, p_tag.get_text()))
-                    temp_prices[i].append(int(price) if price else 0)
-                else:
-                    temp_prices[i].append(0)
-        except Exception as e:
-            print(f"    ⚠️ 에러: {e}")
-            my_ranks.append("에러")
-            for i in range(5): temp_prices[i].append(0)
-    
-    return matrix, temp_prices, my_ranks # my_ranks를 추가로 반환
+return matrix, temp_prices
 
 async def main():
-    # 1. 초기 지연 (0~10분)
-    start_wait = random.randint(0, 600)
-    print(f"🕒 첫 시작 전 {start_wait // 60}분 대기...")
-    await asyncio.sleep(start_wait)
+# 1. 초기 지연 (0~10분)
+start_wait = random.randint(0, 600)
+print(f"🕒 첫 시작 전 {start_wait // 60}분 대기...")
+await asyncio.sleep(start_wait)
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        )
-        page = await context.new_page()
+async with async_playwright() as p:
+browser = await p.chromium.launch(headless=True)
+context = await browser.new_context(
+viewport={'width': 1920, 'height': 1080},
+user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+)
+page = await context.new_page()
 
-        creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
-        creds = json.loads(creds_raw)
-        gc = gspread.service_account_from_dict(creds)
-        sh = gc.open_by_key(SH_ID)
+creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
+creds = json.loads(creds_raw)
+gc = gspread.service_account_from_dict(creds)
+sh = gc.open_by_key(SH_ID)
 
-        # 등록된 모든 상품을 하나씩 수집
-        for tab_name, urls in PRODUCTS.items():
-            print(f"🚀 [{tab_name}] 수집 시작...")
-            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            
-            # 수집 실행
-            final_matrix, temp_prices, my_ranks = await collect_product_data(page, urls)
-            
-            try:
-                wks = sh.worksheet(tab_name)
-                wks.update_acell('P1', f"마지막 체크: {now_str}")
+# 등록된 모든 상품을 하나씩 수집
+for tab_name, urls in PRODUCTS.items():
+print(f"🚀 [{tab_name}] 수집 시작...")
+now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                rank_cells = ['C1', 'E1', 'G1', 'I1', 'K1', 'M1']
-                rank_updates = []
-                for idx, rank_val in enumerate(my_ranks):
-                    # 1개입 (3위) 같은 형식으로 텍스트 만듦
-                    display_text = f"{idx+1}개입 ({rank_val})"
-                    rank_updates.append({'range': rank_cells[idx], 'values': [[display_text]]})
-                
-                # 시트의 1행(C1, E1...)에 순위 한꺼번에 업데이트
-                wks.batch_update(rank_updates)
-                
-                rows = wks.get_all_values()
-                last_rows_data = rows[1:6] if len(rows) >= 6 else []
-                
-                prev_all_prices = []
-                for row in last_rows_data:
-                    row_prices = []
-                    for pi in [2, 4, 6, 8, 10, 12]:
-                        val = row[pi].replace(",", "") if len(row) > pi else "0"
-                        row_prices.append(int(val) if val.isdigit() else 0)
-                    prev_all_prices.append(row_prices)
+# 수집 실행
+final_matrix, temp_prices = await collect_product_data(page, urls)
 
-                if not prev_all_prices: prev_all_prices = [[0]*6 for _ in range(5)]
+try:
+wks = sh.worksheet(tab_name)
+wks.update_acell('P1', f"마지막 체크: {now_str}")
 
-                if temp_prices != prev_all_prices:
-                    # 1. 시트에 기록할 최종 바구니 준비 (5행 12열)
-                    # [[1위가-변, 1위가-변...], [2위가-변, 2위가-변...] ...]
-                    final_matrix = [[] for _ in range(5)]
-                    
-                    # 2. 내 순위 찾기용 리스트 (6개 구성용)
-                    my_ranks = ["권외"] * 6 
+rows = wks.get_all_values()
+last_rows_data = rows[1:6] if len(rows) >= 6 else []
 
-                    # 3. 데이터 채우기 (열 기준 반복)
-                    for col_idx in range(6):
-                        for i in range(5):
-                            curr_p = temp_prices[i][col_idx]
-                            prev_p = prev_all_prices[i][col_idx]
-                            diff = curr_p - prev_p
-                            diff_val = f"▲{abs(diff):,}" if diff > 0 else (f"▼{abs(diff):,}" if diff < 0 else "-")
-                            
-                            # 해당 업체의 가격과 변동을 세트로 추가
-                            final_matrix[i].extend([curr_p, diff_val])
-                            
-                            # 내 제품(wld) 순위 찾기 (업체명/상품명 데이터 확인 필요)
-                            # 현재는 temp_prices 구조상 가격 위주이므로, 순위가 안 나오면 수집부 점검 필요
-                            if "wld" in str(temp_prices[i]).lower() and my_ranks[col_idx] == "권외":
-                                my_ranks[col_idx] = f"{i+1}위"
+prev_all_prices = []
+for row in last_rows_data:
+row_prices = []
+for pi in [2, 4, 6, 8, 10, 12]:
+val = row[pi].replace(",", "") if len(row) > pi else "0"
+row_prices.append(int(val) if val.isdigit() else 0)
+prev_all_prices.append(row_prices)
 
-                    # 4. 1행 헤더 업데이트 (순위 표시)
-                    for idx, r in enumerate(my_ranks):
-                        col_letter = chr(67 + (idx * 2)) # C, E, G, I, K, M
-                        wks.update_acell(f"{col_letter}1", f"{idx+1}개입 ({r})")
+if not prev_all_prices: prev_all_prices = [[0]*6 for _ in range(5)]
 
-                    # 5. 밀림 없이 정확히 2행에 삽입
-                    wks.insert_rows(final_matrix, row=2)
-                    print(f"    ✅ {tab_name} 밀림 현상 수정 및 기록 완료.")
+if temp_prices != prev_all_prices:
+for i in range(5):
+for col_idx in range(6):
+curr_p = temp_prices[i][col_idx]
+prev_p = prev_all_prices[i][col_idx]
+diff = curr_p - prev_p
+diff_val = f"▲{abs(diff):,}" if diff > 0 else (f"▼{abs(diff):,}" if diff < 0 else "-")
+final_matrix[i].extend([curr_p, diff_val])
 
-            except Exception as e:
-                print(f"   ❌ {tab_name} 시트 작업 오류: {e}")
+wks.insert_rows(final_matrix, row=2)
+print(f"   ✅ {tab_name} 변동 감지 및 기록 완료.")
+else:
+print(f"   ⏭️ {tab_name} 가격 동일. 건너뜀.")
 
-            # --- [수정된 부분] 상품 간 휴식 시간 (1~3분 랜덤) ---
-            if tab_name != list(PRODUCTS.keys())[-1]:
-                # 300~600초에서 60~180초로 변경
-                gap_wait = random.randint(60, 180) 
-                print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
-                await asyncio.sleep(gap_wait)
+except Exception as e:
+print(f"   ❌ {tab_name} 시트 작업 오류: {e}")
 
-        await browser.close()
+# --- [수정된 부분] 상품 간 휴식 시간 (1~3분 랜덤) ---
+if tab_name != list(PRODUCTS.keys())[-1]:
+# 300~600초에서 60~180초로 변경
+gap_wait = random.randint(60, 180)
+print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
+await asyncio.sleep(gap_wait)
+
+await browser.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
