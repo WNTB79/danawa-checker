@@ -123,8 +123,8 @@ async def collect_product_data(page, urls):
     return matrix, temp_prices
 
 async def main():
-    # 1. 초기 지연 (0~10분)
-    start_wait = random.randint(0, 600)
+    # 1. 초기 지연 (30초~1분)
+    start_wait = random.randint(30, 60)
     print(f"🕒 첫 시작 전 {start_wait // 60}분 대기...")
     await asyncio.sleep(start_wait)
 
@@ -204,9 +204,9 @@ async def main():
                 except Exception as e:
                     print(f"    ❌ {tab_name} 시트 작업 오류: {e}")
 
-                # --- 상품 간 휴식 시간 (1~3분 랜덤) ---
+                # --- 상품 간 휴식 시간 (10~30초 랜덤) ---
                 if tab_name != list(PRODUCTS.keys())[-1]:
-                    gap_wait = random.randint(60, 180)
+                    gap_wait = random.randint(10, 30)
                     print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
                     await asyncio.sleep(gap_wait)
 
