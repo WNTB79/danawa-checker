@@ -136,74 +136,82 @@ async def main():
         )
         page = await context.new_page()
 
+        # 구글 인증 정보 로드
         creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
         creds = json.loads(creds_raw)
         gc = gspread.service_account_from_dict(creds)
+        
+        # 2. 구글 시트 연결 시도 (재시도 로직)
         sh = None
-    for attempt in range(3):  # 최대 3번 시도
-        try:
-            print(f"🔄 구글 시트 연결 시도 중... ({attempt + 1}/3)")
-            sh = gc.open_by_key(SH_ID)
-            break  # 성공하면 반복문 탈출
-        except Exception as e:
-            print(f"⚠️ 연결 실패: {e}")
-            if attempt < 2:  # 마지막 시도가 아니면 대기 후 다시 시도
-                wait_time = 10  # 10초 대기
-                print(f"🕒 {wait_time}초 후 다시 시도합니다...")
-                await asyncio.sleep(wait_time)
-            else:
-                print("❌ 3번의 시도가 모두 실패했습니다. 프로그램을 종료합니다.")
-                return # 최종 실패 시 종료
-        # 등록된 모든 상품을 하나씩 수집
-        for tab_name, urls in PRODUCTS.items():
-            print(f"🚀 [{tab_name}] 수집 시작...")
-            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-            # 수집 실행
-            final_matrix, temp_prices = await collect_product_data(page, urls)
-
+        for attempt in range(3):
             try:
-                wks = sh.worksheet(tab_name)
-                wks.update_acell('P1', f"마지막 체크: {now_str}")
-
-                rows = wks.get_all_values()
-                last_rows_data = rows[1:6] if len(rows) >= 6 else []
-
-                prev_all_prices = []
-                for row in last_rows_data:
-                    row_prices = []
-                    for pi in [2, 4, 6, 8, 10, 12]:
-                        val = row[pi].replace(",", "") if len(row) > pi else "0"
-                        row_prices.append(int(val) if val.isdigit() else 0)
-                    prev_all_prices.append(row_prices)
-
-                if not prev_all_prices: 
-                    prev_all_prices = [[0]*6 for _ in range(5)]
-
-                if temp_prices != prev_all_prices:
-                    for i in range(5):
-                        for col_idx in range(6):
-                            curr_p = temp_prices[i][col_idx]
-                            prev_p = prev_all_prices[i][col_idx]
-                            diff = curr_p - prev_p
-                            diff_val = f"▲{abs(diff):,}" if diff > 0 else (f"▼{abs(diff):,}" if diff < 0 else "-")
-                            final_matrix[i].extend([curr_p, diff_val])
-
-                    wks.insert_rows(final_matrix, row=2)
-                    print(f"    ✅ {tab_name} 변동 감지 및 기록 완료.")
-                else:
-                    print(f"    ⏭️ {tab_name} 가격 동일. 건너뜀.")
-
+                print(f"🔄 구글 시트 연결 시도 중... ({attempt + 1}/3)")
+                sh = gc.open_by_key(SH_ID)
+                break  # 성공하면 반복문 탈출
             except Exception as e:
-                print(f"    ❌ {tab_name} 시트 작업 오류: {e}")
+                print(f"⚠️ 연결 실패: {e}")
+                if attempt < 2:
+                    wait_time = 10
+                    print(f"🕒 {wait_time}초 후 다시 시도합니다...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    print("❌ 3번의 시도가 모두 실패했습니다. 프로그램을 종료합니다.")
+                    await browser.close()
+                    return
 
-            # --- 상품 간 휴식 시간 (1~3분 랜덤) ---
-            if tab_name != list(PRODUCTS.keys())[-1]:
-                gap_wait = random.randint(60, 180)
-                print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
-                await asyncio.sleep(gap_wait)
+        # 3. 데이터 수집 시작 (연결 성공 시에만 실행)
+        if sh:
+            print("✅ 구글 시트 연결 성공! 수집을 시작합니다.")
+            for tab_name, urls in PRODUCTS.items():
+                print(f"🚀 [{tab_name}] 수집 시작...")
+                now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                # 수집 실행
+                final_matrix, temp_prices = await collect_product_data(page, urls)
 
+                try:
+                    wks = sh.worksheet(tab_name)
+                    wks.update_acell('P1', f"마지막 체크: {now_str}")
+
+                    rows = wks.get_all_values()
+                    last_rows_data = rows[1:6] if len(rows) >= 6 else []
+
+                    prev_all_prices = []
+                    for row in last_rows_data:
+                        row_prices = []
+                        for pi in [2, 4, 6, 8, 10, 12]:
+                            val = row[pi].replace(",", "") if len(row) > pi else "0"
+                            row_prices.append(int(val) if val.isdigit() else 0)
+                        prev_all_prices.append(row_prices)
+
+                    if not prev_all_prices: 
+                        prev_all_prices = [[0]*6 for _ in range(5)]
+
+                    if temp_prices != prev_all_prices:
+                        for i in range(5):
+                            for col_idx in range(6):
+                                curr_p = temp_prices[i][col_idx]
+                                prev_p = prev_all_prices[i][col_idx]
+                                diff = curr_p - prev_p
+                                diff_val = f"▲{abs(diff):,}" if diff > 0 else (f"▼{abs(diff):,}" if diff < 0 else "-")
+                                final_matrix[i].extend([curr_p, diff_val])
+
+                        wks.insert_rows(final_matrix, row=2)
+                        print(f"    ✅ {tab_name} 변동 감지 및 기록 완료.")
+                    else:
+                        print(f"    ⏭️ {tab_name} 가격 동일. 건너뜀.")
+
+                except Exception as e:
+                    print(f"    ❌ {tab_name} 시트 작업 오류: {e}")
+
+                # --- 상품 간 휴식 시간 (1~3분 랜덤) ---
+                if tab_name != list(PRODUCTS.keys())[-1]:
+                    gap_wait = random.randint(60, 180)
+                    print(f"💤 다음 상품 수집 전 {gap_wait // 60}분 {gap_wait % 60}초간 휴식합니다...")
+                    await asyncio.sleep(gap_wait)
+
+        # 모든 작업 완료 후 브라우저 닫기
         await browser.close()
 
 if __name__ == "__main__":
-    asyncio.run(main()) # 여기만 한 칸(4스페이스) 들여쓰기!
+    asyncio.run(main())
