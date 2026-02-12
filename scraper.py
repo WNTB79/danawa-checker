@@ -139,8 +139,21 @@ async def main():
         creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
         creds = json.loads(creds_raw)
         gc = gspread.service_account_from_dict(creds)
-        sh = gc.open_by_key(SH_ID)
-
+        sh = None
+    for attempt in range(3):  # 최대 3번 시도
+        try:
+            print(f"🔄 구글 시트 연결 시도 중... ({attempt + 1}/3)")
+            sh = gc.open_by_key(SH_ID)
+            break  # 성공하면 반복문 탈출
+        except Exception as e:
+            print(f"⚠️ 연결 실패: {e}")
+            if attempt < 2:  # 마지막 시도가 아니면 대기 후 다시 시도
+                wait_time = 10  # 10초 대기
+                print(f"🕒 {wait_time}초 후 다시 시도합니다...")
+                await asyncio.sleep(wait_time)
+            else:
+                print("❌ 3번의 시도가 모두 실패했습니다. 프로그램을 종료합니다.")
+                return # 최종 실패 시 종료
         # 등록된 모든 상품을 하나씩 수집
         for tab_name, urls in PRODUCTS.items():
             print(f"🚀 [{tab_name}] 수집 시작...")
