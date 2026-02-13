@@ -21,49 +21,51 @@ PRODUCTS = {
 async def get_mall_set_price(page, url, idx_name):
     try:
         print(f"🔎 {idx_name} 분석 시작: {url}")
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        # 봇 탐지 방지를 위해 좀 더 사람처럼 접속
+        await page.goto(url, wait_until="networkidle", timeout=60000)
         
-        # 1. 다나와 리스트 렌더링 대기
         await asyncio.sleep(5)
-        await page.evaluate("window.scrollTo(0, 1000)")
-        try:
-            await page.wait_for_selector(".diff_item", timeout=15000)
-            print("   ✅ 다나와 리스트 확인")
-        except: pass
-
-        # 2. 유료배송 1위 업체 링크 추출
+        await page.evaluate("window.scrollTo(0, 800)")
+        
+        # 1. 링크 추출 로직 강화 (자바스크립트로 모든 클릭 가능 요소 수집)
         target_link = await page.evaluate("""
             () => {
-                const items = document.querySelectorAll('.diff_item');
-                for (const item of items) {
-                    const text = item.innerText;
-                    if (!text.includes('무료배송') && (text.includes('배송비') || text.includes('원'))) {
-                        const aTag = item.querySelector('.prc_c a, .mall_nm a, .btn_buy a');
-                        if (aTag && aTag.href) return aTag.href;
+                // 가격 비교 테이블의 모든 행을 가져옴
+                const rows = document.querySelectorAll('.diff_item, .prc_line, [id^="productItem"]');
+                for (const row of rows) {
+                    const text = row.innerText;
+                    // 유료배송 혹은 배송비 문구가 포함된 행 탐색
+                    if (text.includes('배송비') || text.includes('원')) {
+                        const a = row.querySelector('a.p_link, a.btn_buy, .prc_c a, .mall_nm a');
+                        if (a && a.href && !a.href.includes('javascript')) return a.href;
                     }
                 }
-                return null;
+                // 실패 시, 그냥 가장 처음에 보이는 몰 링크라도 가져옴
+                const firstA = document.querySelector('.prc_c a, .btn_buy a, .mall_nm a');
+                return firstA ? firstA.href : null;
             }
         """)
 
         if not target_link:
-            print(f"   ❌ {idx_name}: 다나와 링크 추출 실패")
+            print(f"   ❌ {idx_name}: 링크 추출 실패 (페이지 구조 확인 필요)")
             return "업체미발견", 0
 
-        # 3. 쇼핑몰 이동 (1차 진입: 보통 검색 결과 페이지)
-        print(f"   🚀 판매처 이동 시작...")
+        # 2. 판매처 이동
+        print(f"   🚀 판매처 이동: {target_link[:50]}...")
         await page.goto(target_link, wait_until="load", timeout=90000)
-        await asyncio.sleep(8)
+        await asyncio.sleep(10)
         
-        # [지마켓 전용] 검색 결과 페이지라면 첫 번째 상품 클릭해서 상세페이지 진입
-        if "gmarket.co.kr/n/search" in page.url:
-            print("   🖱️ 지마켓 검색 리스트 발견, 상세페이지로 클릭 이동...")
+        # 3. 지마켓/옥션 검색 결과 페이지 처리 (클릭해서 상세페이지로!)
+        if "gmarket.co.kr/n/search" in page.url or "auction.co.kr/search" in page.url:
+            print("   🖱️ 검색 리스트 감지, 첫 번째 상품으로 진입...")
             try:
-                # 첫 번째 상품 이미지나 제목 클릭
-                await page.click(".box__item-container a, .image__item", timeout=10000)
-                await asyncio.sleep(8)
+                # 지마켓/옥션 검색결과에서 상품 클릭 (여러 선택자 대응)
+                item_selector = ".box__item-container a, .image__item, .link__item, .item_title a"
+                await page.wait_for_selector(item_selector, timeout=10000)
+                await page.click(item_selector)
+                await asyncio.sleep(10)
             except:
-                print("   ⚠️ 클릭 실패, 현재 페이지에서 분석 시도")
+                print("   ⚠️ 검색 결과에서 상품을 클릭하지 못함")
 
         final_url = page.url
         print(f"   🔗 최종 도착: {final_url[:60]}...")
@@ -71,34 +73,34 @@ async def get_mall_set_price(page, url, idx_name):
         mall_name = "기타몰"
         set_price = 0
 
-        # 4. 가격 추출 (지마켓/옥션 정밀 타격)
+        # 4. 가격 추출 (최종 상세페이지)
         if "auction.co.kr" in final_url or "gmarket.co.kr" in final_url:
             mall_name = "옥션" if "auction" in final_url else "지마켓"
-            
-            # 3번째 스샷의 '59,770원' 같은 설정가를 잡기 위한 선택자
-            # 지마켓 상세페이지의 '판매가' 영역을 집중 공략
+            # 친구가 본 '설정가'를 찾기 위한 정밀 선택자
             price_selectors = [
-                "span.price_inner__price", # 지마켓 설정가
-                "del.original-price",      # 지마켓 할인 전 가격
-                "#lblSellingPrice",        # 옥션/지마켓 공통
-                ".price_real", ".price_main",
-                "strong.price_real_value"  # 검색결과용 대비
+                "span.price_inner__price", 
+                "del.original-price", 
+                "#lblSellingPrice", 
+                "strong.price_real_value",
+                ".price_real", ".price_main"
             ]
 
             for s in price_selectors:
-                el = await page.query_selector(s)
-                if el:
-                    txt = await el.inner_text()
-                    num = re.sub(r'[^0-9]', '', txt)
-                    if num and int(num) > 1000: # 너무 낮은 가격(배송비 등) 제외
-                        set_price = int(num)
-                        print(f"   🎯 가격 발견 ({s}): {set_price}")
-                        break
+                try:
+                    el = await page.query_selector(s)
+                    if el:
+                        txt = await el.inner_text()
+                        num = re.sub(r'[^0-9]', '', txt)
+                        if num and int(num) > 5000: # 배송비 등 잘못된 가격 방지
+                            set_price = int(num)
+                            print(f"   🎯 가격 발견 ({s}): {set_price}")
+                            break
+                except: continue
         
         return mall_name, set_price
 
     except Exception as e:
-        print(f"   ⚠️ 에러: {str(e)[:50]}")
+        print(f"   ⚠️ 에러: {str(e)[:100]}")
         return "에러", 0
 
 async def main():
@@ -115,9 +117,11 @@ async def main():
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
+        # 실제 브라우저와 거의 흡사한 환경 설정
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            locale="ko-KR"
         )
         page = await context.new_page()
 
