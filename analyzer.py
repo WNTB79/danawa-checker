@@ -7,84 +7,79 @@ from datetime import datetime
 from playwright.async_api import async_playwright
 import gspread
 
-# --- 설정 ---
+# --- AI 설정: 가장 확실한 데이터 소스 정의 ---
 SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
-# 상품 코드만 리스트로 관리 (상세페이지 접근용)
-PCODES = {
-    "1개입": "13412984", "2개입": "13413059", "3개입": "13413086",
-    "4개입": "13413254", "5개입": "13678937", "6개입": "13413314"
+# 상품명만 알면 AI가 주소를 찾아갑니다.
+PRODUCTS = {
+    "1개입": "콘드1200 60정",
+    "2개입": "콘드1200 60정 2개",
+    "3개입": "콘드1200 60정 3개",
+    "4개입": "콘드1200 60정 4개",
+    "5개입": "콘드1200 60정 5개",
+    "6개입": "콘드1200 60정 6개"
 }
 
-async def get_price_final(browser_context, pcode, idx_name):
-    page = await browser_context.new_page()
+async def solve_price(page):
+    """AI가 페이지 내에서 가격처럼 보이는 가장 큰 숫자를 찾아냅니다."""
     try:
-        print(f"🔎 {idx_name} 분석 중 (코드: {pcode})")
+        # 화면에 보이는 모든 텍스트 추출
+        body_text = await page.inner_text("body")
+        # '원' 앞의 숫자 패턴 추출 (예: 59,700원)
+        price_candidates = re.findall(r'([0-9,]{4,})\s*원', body_text)
         
-        # 다나와 상세페이지 접속
-        url = f"https://prod.danawa.com/info/?pcode={pcode}"
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await asyncio.sleep(7) 
-
-        # [전략] 화면에 안 보이면 HTML 소스 전체에서 쇼핑몰 이동 링크를 정규식으로 추출
-        content = await page.content()
+        valid_prices = []
+        for p in price_candidates:
+            num = int(re.sub(r'[^0-9]', '', p))
+            # 콘드1200 가격대(1만 원 ~ 50만 원)에 맞는 숫자만 필터링
+            if 10000 <= num <= 500000:
+                valid_prices.append(num)
         
-        # 다나와 로딩 브릿지 주소 패턴 추출 (loadingBridge 문자열 포함된 모든 URL)
-        bridge_links = re.findall(r'https?://[^\s"\']+loadingBridge[^\s"\']+', content)
+        # 최저가를 찾되, 너무 낮은 가격(배송비 등)은 제외하기 위해 정렬 후 첫 번째 선택
+        return min(valid_prices) if valid_prices else 0
+    except:
+        return 0
+
+async def collect_data(browser_context, keyword, idx_name):
+    page = await browser_context.new_page()
+    # 사람처럼 보이기 위한 랜덤 딜레이
+    await asyncio.sleep(random.uniform(1, 3))
+    
+    try:
+        print(f"🚀 AI 분석 시작: {idx_name} ({keyword})")
         
-        target_link = None
-        # blogNum=9(지마켓), blogNum=7(옥션), blogNum=15(11번가) 우선 탐색
-        for link in bridge_links:
-            if any(key in link for key in ["blogNum=9", "blogNum=7", "blogNum=15"]):
-                target_link = link
-                break
+        # [핵심] 쇼핑몰 검색 페이지로 직접 진입 (다나와를 거치지 않음)
+        # 지마켓이 가장 데이터가 명확하므로 지마켓을 우선 타격합니다.
+        search_url = f"https://www.gmarket.co.kr/n/search?keyword={keyword}&s=8" # s=8: 최저가순 정렬
         
-        if not target_link and bridge_links:
-            target_link = bridge_links[0]
-
-        if not target_link:
-            print("   ❌ HTML 소스에서 판매처 링크를 찾지 못했습니다.")
-            return None, 0
-
-        # 쇼핑몰 상세페이지로 새 창 열기
-        mall_page = await browser_context.new_page()
-        print(f"   🚀 쇼핑몰 강제 이동 중...")
-        await mall_page.goto(target_link, wait_until="load", timeout=90000)
-        await asyncio.sleep(12)
-
-        # 지마켓/옥션 리스트로 튕겼을 때 상품번호로 상세페이지 재조합
-        if "search" in mall_page.url or "keyword=" in mall_page.url:
-            item_no = re.search(r'(itemno|goodscode|goodsNo)=(\d+)', target_link)
-            if item_no:
-                num = item_no.group(2)
-                # 지마켓(blogNum=9)이면 지마켓 상세페이지로, 아니면 옥션 상세페이지로 강제 이동
-                d_url = f"https://item.gmarket.co.kr/Item?goodscode={num}" if "blogNum=9" in target_link else f"https://itempage3.auction.co.kr/DetailView.aspx?itemno={num}"
-                await mall_page.goto(d_url, wait_until="load")
-                await asyncio.sleep(8)
-
-        print(f"   🔗 최종 도착: {mall_page.url[:60]}")
-        mall_name = "지마켓" if "gmarket" in mall_page.url else "옥션" if "auction" in mall_page.url else "11번가" if "11st" in mall_page.url else "기타"
+        await page.goto(search_url, wait_until="domcontentloaded")
+        await asyncio.sleep(5)
         
-        # 최종 가격 추출 (패턴 매칭 강화)
-        price = 0
-        mall_content = await mall_page.content()
-        matches = re.findall(r'([0-9,]{4,})\s*원', mall_content)
-        for m in matches:
-            num = int(re.sub(r'[^0-9]', '', m))
-            if 10000 < num < 1000000:
-                price = num
-                break
-
-        await mall_page.close()
-        return mall_name, price
+        # 첫 번째 상품의 상세 페이지 주소 가져오기
+        first_item = page.locator(".box__item-container a").first
+        item_link = await first_item.get_attribute("href")
+        
+        if item_link:
+            await page.goto(item_link, wait_until="networkidle")
+            await asyncio.sleep(5)
+            
+            price = await solve_price(page)
+            mall = "지마켓"
+            
+            if price > 0:
+                print(f"   💰 성공! {mall} 가격 발견: {price}원")
+                return mall, price
+        
+        print(f"   ❌ {idx_name} 수집 실패")
+        return None, 0
 
     except Exception as e:
-        print(f"   ⚠️ 오류: {str(e)[:50]}")
+        print(f"   ⚠️ 분석 중 에러 발생 (무시하고 다음 진행)")
         return None, 0
     finally:
         await page.close()
 
 async def main():
-    # Google 시트 인증
+    # 1. 구글 시트 연결
     creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
     creds = json.loads(creds_raw)
     gc = gspread.service_account_from_dict(creds)
@@ -92,24 +87,24 @@ async def main():
     wks = sh.worksheet("정산가분석")
 
     async with async_playwright() as p:
+        # 2. 브라우저 실행 (사람처럼 보이는 위장 설정)
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            viewport={'width': 1280, 'height': 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
         )
 
-        print(f"--- 콘드1200 최종 정밀 수집 시작 ---")
-        for idx_name, pcode in PCODES.items():
-            mall, price = await get_price_final(context, pcode, idx_name)
+        for idx_name, keyword in PRODUCTS.items():
+            mall, price = await collect_data(context, keyword, idx_name)
+            
             if price > 0:
                 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                # 시트에 [날짜, 제품명, 개입, 몰이름, 원가, 정산가(85%)] 기록
+                # 데이터 기록: [일시, 제품명, 구분, 판매처, 원가, 정산가]
                 wks.append_row([now, "콘드1200", idx_name, mall, price, int(price * 0.85)])
-                print(f"   ✅ 시트 기록 성공: {price}원")
-            else:
-                print("   ❌ 수집 실패")
+                print(f"   ✅ 시트 기록 완료!")
             
-            # 차단 방지를 위해 랜덤하게 쉬기
-            await asyncio.sleep(random.randint(15, 25))
+            # 다음 수집 전 휴식 (봇 감지 회피)
+            await asyncio.sleep(random.uniform(10, 20))
 
         await browser.close()
 
