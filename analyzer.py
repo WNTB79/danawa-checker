@@ -8,7 +8,7 @@ from datetime import datetime
 from playwright.async_api import async_playwright
 
 # --- 설정 (기존 정보 활용) ---
-SH_ID = "1I0nN-m7k3qX35YcR_z1_3P6p7i19P1_6-Y3_T_0"  # 친구의 시트 ID
+SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"  # 친구의 시트 ID
 # 분석할 상품 리스트 (기존 PRODUCTS와 동일하게 유지하거나 테스트용으로 몇 개만 두셔도 됩니다)
 # 우선은 옥션/지마켓 비중이 높은 상품 위주로 테스트해보세요.
 PRODUCTS = {
