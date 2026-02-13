@@ -13,10 +13,14 @@ SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"  # 친구의 시트 ID
 # 우선은 옥션/지마켓 비중이 높은 상품 위주로 테스트해보세요.
 PRODUCTS = {
     "콘드1200": [
-        "https://prod.danawa.com/info/?pcode=13412984", "https://prod.danawa.com/info/?pcode=13413059",
-        "https://prod.danawa.com/info/?pcode=13413086", "https://prod.danawa.com/info/?pcode=13413254",
-        "https://prod.danawa.com/info/?pcode=13678937", "https://prod.danawa.com/info/?pcode=13413314"
-}
+        "https://prod.danawa.com/info/?pcode=13412984", 
+        "https://prod.danawa.com/info/?pcode=13413059",
+        "https://prod.danawa.com/info/?pcode=13413086", 
+        "https://prod.danawa.com/info/?pcode=13413254",
+        "https://prod.danawa.com/info/?pcode=13678937", 
+        "https://prod.danawa.com/info/?pcode=13413314"
+    ] # 여기서 주소 리스트를 닫고(])
+} # 여기서 전체 묶음을 닫아줘야(}) 에러가 안 나!
 
 async def get_seller_price(page, url):
     """다나와 1위 상품의 상세페이지로 들어가서 판매자 설정가를 가져오는 함수"""
