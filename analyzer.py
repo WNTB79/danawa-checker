@@ -21,69 +21,82 @@ PRODUCTS = {
 }
 
 async def get_mall_set_price(page, url, idx_name):
-    """다나와 유료배송 1위를 클릭해 들어가서 판매자 설정가를 가져옴"""
+    """다나와 유료배송 1위의 링크를 직접 추출해서 이동 후 판매자 설정가를 가져옴"""
     try:
         print(f"🔎 {idx_name} 분석 중: {url}")
-        await page.goto(url, wait_until="networkidle", timeout=60000)
+        # 1. 다나와 상세페이지 접속
+        await page.goto(url, wait_until="load", timeout=60000)
         await asyncio.sleep(5)
         
-        # 1. 기존 로직처럼 '유료배송' 아이템 찾기
+        # 스크롤을 내려서 가격 비교표가 완전히 로드되게 함
+        await page.evaluate("window.scrollTo(0, 800)")
+        await asyncio.sleep(2)
+
+        # 2. HTML 분석해서 유료배송 1위 링크 따오기
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
-        items = soup.select(".diff_item, .product-item, li[id^='productItem']")
-
-        target_link_selector = None
-        for i, item in enumerate(items):
-            all_text = item.get_text(separator=' ', strip=True)
-            # '무료배송'이 아니고 '원'이 포함된 유료배송 아이템 중 첫 번째(1위)
-            if "무료배송" not in all_text and ("배송비" in all_text or "원" in all_text):
-                # 해당 아이템의 클릭 가능한 링크(a 태그)의 선택자 생성
-                target_link_selector = f".diff_item:nth-of-type({i+1}) .prc_c a, .diff_item:nth-of-type({i+1}) .price a"
-                break
-
-        if not target_link_selector:
-            return "유료배송없음", 0
-
-        # 2. 1위 판매처 클릭 (새 탭 열기)
-        try:
-            async with page.context.expect_page() as new_page_info:
-                # 해당 요소를 찾아 클릭
-                await page.click(target_link_selector, timeout=5000)
-            mall_page = await new_page_info.value
-        except:
-            print("   ⚠️ 클릭 실패 또는 새 창 미발생")
-            return "클릭실패", 0
-
-        await mall_page.bring_to_front()
-        await asyncio.sleep(6) # 상세페이지 로딩 대기
         
-        curr_url = mall_page.url
+        # 다나와 가격비교 목록 아이템들
+        items = soup.select(".diff_item, [id^='productItem']")
+        
+        final_link = None
+        for item in items:
+            all_text = item.get_text(separator=' ', strip=True)
+            # '무료배송'이 아닌 항목 중 첫 번째
+            if "무료배송" not in all_text and ("배송비" in all_text or "원" in all_text):
+                a_tag = item.select_one(".prc_c a, .price a, .btn_buy a")
+                if a_tag and a_tag.get('href'):
+                    # 다나와 내부 링크인 경우 도메인 붙여주기
+                    link = a_tag.get('href')
+                    if link.startswith('//'):
+                        final_link = "https:" + link
+                    elif link.startswith('/'):
+                        final_link = "https://prod.danawa.com" + link
+                    else:
+                        final_link = link
+                    break
+
+        if not final_link:
+            print("   ⚠️ 유료배송 1위 링크를 찾지 못했습니다.")
+            return "링크미발견", 0
+
+        # 3. 추출한 링크로 직접 이동 (새 탭 대신 현재 탭 사용으로 안정성 확보)
+        print(f"   🚀 판매처로 이동 중...")
+        await page.goto(final_link, wait_until="load", timeout=60000)
+        
+        # 경유 페이지(v_gate) 등 대기시간 포함
+        await asyncio.sleep(8)
+        
+        curr_url = page.url
+        print(f"   🔗 최종 도착지: {curr_url}")
+        
         mall_name = "기타"
         set_price = 0
 
-        # 3. 쇼핑몰별 '판매자 설정가' 추출
+        # 4. 쇼핑몰별 '판매자 설정가' 추출 (옥션/지마켓)
         if "auction.co.kr" in curr_url:
             mall_name = "옥션"
-            el = await mall_page.query_selector("#lblSellingPrice") # 옥션 설정가 ID
-            if el:
-                price_text = await el.inner_text()
-                set_price = int(re.sub(r'[^0-9]', '', price_text))
+            # 여러 태그 후보군 탐색
+            for s in ["#lblSellingPrice", ".price_real", ".price_inner .price"]:
+                el = await page.query_selector(s)
+                if el:
+                    price_text = await el.inner_text()
+                    set_price = int(re.sub(r'[^0-9]', '', price_text))
+                    if set_price > 0: break
 
         elif "gmarket.co.kr" in curr_url:
             mall_name = "지마켓"
-            # 지마켓은 여러 후보 중 값이 있는 것을 선택
-            for s in [".price_real", "#lblSellingPrice", "span.price"]:
-                el = await mall_page.query_selector(s)
+            for s in [".price_real", "#lblSellingPrice", "span.price", ".price_main"]:
+                el = await page.query_selector(s)
                 if el:
                     price_text = await el.inner_text()
                     set_price = int(re.sub(r'[^0-9]', '', price_text))
                     if set_price > 0: break
         
-        await mall_page.close()
         return mall_name, set_price
 
     except Exception as e:
-        print(f"   ⚠️ 에러: {e}")
+        print(f"   ⚠️ 함수 내 에러: {e}")
         return "에러", 0
 
 async def main():
