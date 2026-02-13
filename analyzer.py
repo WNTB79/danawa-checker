@@ -2,6 +2,7 @@ import asyncio
 import re
 import json
 import os
+import random  # 추가됨
 from datetime import datetime
 from playwright.async_api import async_playwright
 import gspread
@@ -22,47 +23,44 @@ async def get_price_final(page, url, idx_name):
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(5)
 
-        # [전략 1] 스샷에 나온 '최저가 구매하기' 버튼의 텍스트를 직접 찾아서 클릭/링크 추출
+        # 1. 다나와 '최저가 구매하기' 버튼 링크 추출
         target_link = await page.evaluate("""() => {
             const buttons = Array.from(document.querySelectorAll('a, button'));
             const buyBtn = buttons.find(b => b.innerText.includes('최저가 구매하기'));
             return buyBtn ? buyBtn.href : null;
         }""")
 
-        # 버튼이 안 잡힐 경우를 대비한 2차 수집 (스샷의 파란색 최저가 숫자 옆 버튼)
         if not target_link:
-            target_link = await page.evaluate("() => { const a = document.querySelector('.lowest_area a.item__link'); return a ? a.href : null; }")
-
-        if not target_link:
-            print(f"   ❌ 최저가 버튼 링크 추출 실패")
+            print("   ❌ 최저가 버튼을 찾을 수 없습니다.")
             return None, 0
 
-        # 판매처로 이동
-        print(f"   🚀 판매처(1위) 이동 중...")
+        # 2. 판매처 이동
+        print("   🚀 판매처 이동 중...")
         await page.goto(target_link, wait_until="load", timeout=90000)
-        await asyncio.sleep(10)
+        await asyncio.sleep(8)
 
-        # [전략 2] 지마켓/옥션 검색 리스트 처리
-        if "gmarket.co.kr/n/search" in page.url or "auction.co.kr/search" in page.url:
-            print("   🖱️ 검색 리스트 발견! 첫 번째 상품으로 재진입...")
-            try:
-                # 스샷의 상품 이미지나 링크 클릭
-                await page.click(".box__item-container a, .image__item, .link__item", timeout=7000)
-                await asyncio.sleep(10)
-            except: pass
+        # 3. [지마켓 튕김 방지] 만약 엉뚱한 검색페이지라면 상품번호로 강제 이동
+        current_url = page.url
+        if "gmarket.co.kr" in current_url and ("keyword=" in current_url or "search" in current_url):
+            print("   ⚠️ 지마켓 검색페이지 튕김 감지! 상품번호 추출 시도...")
+            # URL에서 itemno 혹은 goodscode 추출
+            item_no_match = re.search(r'(itemno|goodscode)=([0-9]+)', target_link)
+            if item_no_match:
+                item_no = item_no_match.group(2)
+                direct_url = f"https://item.gmarket.co.kr/Item?goodscode={item_no}"
+                print(f"   🎯 상세페이지 직접 강제 진입: {direct_url}")
+                await page.goto(direct_url, wait_until="load", timeout=60000)
+                await asyncio.sleep(7)
 
         final_url = page.url
         mall_name = "지마켓" if "gmarket" in final_url else "옥션" if "auction" in final_url else "기타"
-        print(f"   🔗 최종 도착: {mall_name} ({final_url[:50]}...)")
+        print(f"   🔗 최종 도착: {mall_name}")
 
-        # [전략 3] 설정가(할인 전 가격) 정밀 추출
+        # 4. 설정가(59,770원) 추출
         price = 0
-        # 스샷의 '59,770원' 위치를 타겟팅하는 선택자들
         price_selectors = [
-            "span.price_inner__price", # 지마켓 설정가 (진짜 판매자가 적은 가격)
-            "del.original-price",      # 지마켓 취소선 가격
-            "#lblSellingPrice",        # 옥션 설정가
-            ".price_real", ".price_main"
+            "span.price_inner__price", "del.original-price", 
+            "#lblSellingPrice", "strong.price_real_value", ".price_real"
         ]
 
         for s in price_selectors:
@@ -71,24 +69,28 @@ async def get_price_final(page, url, idx_name):
                 if el:
                     txt = await el.inner_text()
                     num = int(re.sub(r'[^0-9]', '', txt))
-                    if num > 10000: # 1만원 이상인 경우만 (정상 설정가)
+                    if num > 10000:
                         price = num
-                        print(f"   🎯 {mall_name} 설정가 추출 완료: {price}원")
+                        print(f"   💰 설정가 발견: {price}원")
                         break
             except: continue
             
         return mall_name, price
 
     except Exception as e:
-        print(f"   ⚠️ 오류: {str(e)[:50]}")
+        print(f"   ⚠️ 오류 발생: {str(e)[:100]}")
         return None, 0
 
 async def main():
-    creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
-    creds = json.loads(creds_raw)
-    gc = gspread.service_account_from_dict(creds)
-    sh = gc.open_by_key(SH_ID)
-    wks = sh.worksheet("정산가분석")
+    try:
+        creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
+        creds = json.loads(creds_raw)
+        gc = gspread.service_account_from_dict(creds)
+        sh = gc.open_by_key(SH_ID)
+        wks = sh.worksheet("정산가분석")
+    except Exception as e:
+        print(f"❌ 구글 시트 연결 실패: {e}")
+        return
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -103,14 +105,12 @@ async def main():
             for idx, url in enumerate(urls):
                 mall, price = await get_price_final(page, url, f"{idx+1}개입")
                 if price > 0:
-                    wks.append_row([
-                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        prod_name, f"{idx+1}개입", mall, price, int(price * 0.85)
-                    ])
-                    print(f"   ✅ 시트 업데이트 완료!")
-                else:
-                    print(f"   ❌ 데이터 수집 실패 (지마켓/옥션 아님 혹은 페이지 오류)")
-                await asyncio.sleep(random.randint(12, 15))
+                    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    wks.append_row([now, prod_name, f"{idx+1}개입", mall, price, int(price * 0.85)])
+                    print("   ✅ 시트 기록 완료!")
+                
+                # 대기 시간 추가 (에러 해결됨)
+                await asyncio.sleep(random.randint(10, 15))
 
         await browser.close()
 
