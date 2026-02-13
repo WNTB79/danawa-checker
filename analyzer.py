@@ -21,19 +21,12 @@ async def get_price_final(browser_context, url, idx_name):
     page = await browser_context.new_page()
     try:
         print(f"🔎 {idx_name} 분석: {url}")
-        # 페이지가 완전히 로드될 때까지 넉넉히 대기
-        await page.goto(url, wait_until="networkidle", timeout=60000)
-        
-        # 버튼이 화면에 보여야 클릭 가능하므로 스크롤 내림
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await page.mouse.wheel(0, 500)
         await asyncio.sleep(3)
 
-        print("   🎯 최저가 구매 버튼 찾는 중...")
-        
-        # [전략] 텍스트가 '최저가 구매하기'인 요소를 찾아서 클릭 (새 탭 대기)
         async with page.expect_popup() as popup_info:
-            # 1. '최저가 구매하기' 텍스트를 가진 링크 우선 타격
-            # 2. 실패 시 클래스 기반 타격
+            print("   🎯 최저가 구매 버튼 클릭!")
             try:
                 btn = page.get_by_text("최저가 구매하기").first
                 await btn.click(timeout=15000)
@@ -42,35 +35,45 @@ async def get_price_final(browser_context, url, idx_name):
         
         new_page = await popup_info.value
         await new_page.bring_to_front()
-        print("   🚀 쇼핑몰 새 탭 진입 완료!")
         
-        # 지마켓/옥션은 로딩이 매우 무거우므로 넉넉히 대기
-        await asyncio.sleep(12) 
+        # 지마켓/옥션/11번가 공통: 페이지 완전 로딩 대기
+        await asyncio.sleep(15) 
 
-        # 지마켓/옥션 검색 리스트 대응
+        # 지마켓 검색 리스트에서 상세페이지로 한 번 더 진입
         if "search" in new_page.url or "keyword=" in new_page.url:
-            print("   ⚠️ 검색 리스트 발견! 첫 상품 클릭...")
+            print("   🖱️ 검색 리스트에서 실제 상품 클릭 중...")
             try:
-                # 첫 번째 상품 이미지나 제목을 클릭
+                # 지마켓/옥션 리스트의 첫 번째 상품
                 await new_page.locator(".box__item-container a, .image__item, .link__item").first.click(timeout=10000)
-                await asyncio.sleep(8)
+                await asyncio.sleep(10) # 상세페이지 로딩 대기
             except: pass
 
-        print(f"   🔗 최종 도착지: {new_page.url[:60]}")
+        print(f"   🔗 최종 페이지: {new_page.url[:60]}")
         
-        mall_name = "지마켓" if "gmarket" in new_page.url else "옥션" if "auction" in new_page.url else "기타"
+        mall_name = "지마켓" if "gmarket" in new_page.url else "옥션" if "auction" in new_page.url else "11번가" if "11st" in new_page.url else "기타"
         price = 0
         
-        # 설정가 추출용 정밀 선택자
-        selectors = ["span.price_inner__price", "del.original-price", "#lblSellingPrice", ".price_real"]
+        # [핵심] 설정가(원가)를 찾기 위한 더 강력한 선택자들
+        # 지마켓 원가(price_inner__price), 11번가 원가(price_detail), 일반적인 원가 태그들
+        selectors = [
+            "span.price_inner__price", 
+            "del.original-price", 
+            "#lblSellingPrice", 
+            ".price_detail .value", 
+            ".price_real", 
+            "strong.price_real_value",
+            "span[class*='original']",
+            "span[class*='price_main']"
+        ]
         
         for s in selectors:
             try:
                 el = await new_page.query_selector(s)
                 if el:
                     txt = await el.inner_text()
+                    # 숫자만 추출
                     num = int(re.sub(r'[^0-9]', '', txt))
-                    if num > 10000:
+                    if num > 10000: # 배송비 등 제외를 위해 1만원 이상만 취급
                         price = num
                         print(f"   💰 가격 발견: {price}원 ({mall_name})")
                         break
@@ -86,6 +89,7 @@ async def get_price_final(browser_context, url, idx_name):
         await page.close()
 
 async def main():
+    # 시트 연결 확인
     creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
     creds = json.loads(creds_raw)
     gc = gspread.service_account_from_dict(creds)
@@ -100,16 +104,20 @@ async def main():
         )
 
         for prod_name, urls in PRODUCTS.items():
-            print(f"\n--- {prod_name} 분석 시작 ---")
+            print(f"\n--- {prod_name} 수집 시작 ---")
             for idx, url in enumerate(urls):
                 mall, price = await get_price_final(context, url, f"{idx+1}개입")
+                
+                # 가격이 0보다 클 때만 무조건 기록! (기록 로그 추가)
                 if price > 0:
                     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    wks.append_row([now, prod_name, f"{idx+1}개입", mall, price, int(price * 0.85)])
-                    print("   ✅ 시트 기록 성공")
+                    row_data = [now, prod_name, f"{idx+1}개입", mall, price, int(price * 0.85)]
+                    wks.append_row(row_data)
+                    print(f"   ✅ 시트 기록 성공: {row_data}")
+                else:
+                    print(f"   ❌ 가격을 찾지 못해 기록을 건너뜁니다.")
                 
-                # 다음 상품 분석 전 충분한 휴식 (차단 방지)
-                await asyncio.sleep(random.randint(8, 12))
+                await asyncio.sleep(random.randint(10, 15))
 
         await browser.close()
 
