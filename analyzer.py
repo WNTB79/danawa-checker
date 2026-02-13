@@ -10,7 +10,6 @@ import gspread
 # --- 설정 ---
 SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
 
-# 테스트용 상품 (콘드1200)
 PRODUCTS = {
     "콘드1200": [
         "https://prod.danawa.com/info/?pcode=13412984", "https://prod.danawa.com/info/?pcode=13413059",
@@ -24,104 +23,85 @@ async def get_mall_set_price(page, url, idx_name):
         print(f"🔎 {idx_name} 분석 시작: {url}")
         
         # 1. 다나와 페이지 접속
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        await page.goto(url, wait_until="load", timeout=60000)
         
         # 2. 가격 비교 리스트 로딩 대기
         try:
-            # 리스트 전체를 감싸는 영역이 나타날 때까지 대기
-            await page.wait_for_selector("#productPriceComparison, .diff_item", timeout=20000)
+            await page.wait_for_selector(".diff_item, .prc_line", timeout=20000)
             print("   ✅ 리스트 로드 확인")
         except:
-            print("   ⚠️ 리스트 로딩 지연 중...")
+            print("   ⚠️ 리스트 로딩 지연...")
 
-        await asyncio.sleep(5)
-        # 오른쪽 섹션 로딩을 위해 스크롤을 여러 번 나눠서 수행
-        await page.evaluate("window.scrollTo(0, 500)")
-        await asyncio.sleep(1)
-        await page.evaluate("window.scrollTo(0, 1500)")
         await asyncio.sleep(4)
+        await page.evaluate("window.scrollTo(0, 1000)")
+        await asyncio.sleep(2)
 
-        # 3. Playwright 직접 접근 방식으로 유료배송 1위 찾기 (BS4보다 강력함)
-        items = await page.query_selector_all(".diff_item, [id^='productItem']")
+        # 3. 유료배송 1위 링크 추출 (가장 정확한 판매처 이동 링크 찾기)
+        # 광고 상품을 제외하고 실제 가격 비교 테이블(.diff_item)에서 추출
+        items = await page.query_selector_all(".diff_item")
         
         target_link = None
         for item in items:
             inner_text = await item.inner_text()
-            
-            # 유료배송 판별: '무료'가 없고, '원'이나 '배송비'가 있는 경우
-            if "무료" not in inner_text and ("원" in inner_text or "배송비" in inner_text):
-                # 아이템 내의 모든 링크 추출 시도
-                a_tags = await item.query_selector_all("a")
-                for a in a_tags:
-                    href = await a.get_attribute("href")
-                    # 다나와 광고 링크(ad.danawa)나 상품 링크(v_gate) 등 유효한 주소 찾기
-                    if href and ("danawa.com" in href or "v_gate" in href or href.startswith("http")):
-                        if "javascript" in href: continue # 자바스크립트 함수 제외
-                        
-                        if href.startswith("//"): target_link = "https:" + href
-                        elif href.startswith("/"): target_link = "https://prod.danawa.com" + href
-                        else: target_link = href
+            # 유료배송 필터 (무료배송 제외)
+            if "무료" not in inner_text and ("배송비" in inner_text or "원" in inner_text):
+                # 판매처로 이동하는 '구매' 버튼이나 '몰 로고' 링크 추출
+                a_tag = await item.query_selector(".prc_c a, .mall_nm a, .btn_buy a")
+                if a_tag:
+                    href = await a_tag.get_attribute("href")
+                    if href and "javascript" not in href:
+                        target_link = "https:" + href if href.startswith("//") else (href if href.startswith("http") else "https://prod.danawa.com" + href)
                         break
-                if target_link: break
 
         if not target_link:
-            print(f"   ❌ {idx_name}: 유료배송 링크 추출 실패 (아이템 {len(items)}개 검사함)")
+            print(f"   ❌ {idx_name}: 링크 추출 실패")
             return "업체미발견", 0
 
-        # 4. 판매처 이동 (리다이렉션 고려)
-        print(f"   🚀 판매처 이동 시작...")
+        # 4. 쇼핑몰 이동
+        print(f"   🚀 판매처 이동: {target_link[:50]}...")
         await page.goto(target_link, wait_until="load", timeout=90000)
+        await asyncio.sleep(12) # 경유 페이지 및 로딩 대기
         
-        # 쇼핑몰 도착 후 충분히 대기 (경유 페이지가 길 수 있음)
-        await asyncio.sleep(12) 
-        
-        # 팝업창이 뜨는 경우 닫기 (선택사항이나 안정성을 위해 추가)
         final_url = page.url
         print(f"   🔗 최종 도착: {final_url[:70]}...")
 
         mall_name = "기타몰"
         set_price = 0
 
-        # 5. 가격 추출 (옥션/지마켓 정밀 타격)
+        # 5. 쇼핑몰별 가격 추출 (상세페이지 + 검색페이지 통합 대응)
         if "auction.co.kr" in final_url or "gmarket.co.kr" in final_url:
             mall_name = "옥션" if "auction" in final_url else "지마켓"
-            # 옥션/지마켓의 다양한 가격 태그 후보군
-            price_selectors = [
-                "#lblSellingPrice",    # 옥션/지마켓 기본 판매가
-                ".price_real",         # 지마켓 구버전
-                ".price_main",         # 지마켓 신버전
-                "span.price",          # 일반
-                ".un-tr-price"         # 특수 케이스
-            ]
-            for s in price_selectors:
-                try:
-                    el = await page.query_selector(s)
-                    if el:
-                        txt = await el.inner_text()
-                        num = re.sub(r'[^0-9]', '', txt)
-                        if num:
-                            set_price = int(num)
-                            break
-                except: continue
+            
+            # 케이스 A: 상품 상세 페이지인 경우 (기존 로직)
+            selectors = ["#lblSellingPrice", ".price_real", ".price_main", "span.price", ".un-tr-price"]
+            
+            # 케이스 B: 검색 결과 페이지로 도착한 경우 (새로 추가!)
+            # 지마켓 검색 결과 가격: .box__price-value
+            # 옥션 검색 결과 가격: .text__price-area_value
+            selectors += [".box__price-value", ".text__price-area_value", "strong.price_real_value"]
+
+            for s in selectors:
+                el = await page.query_selector(s)
+                if el:
+                    txt = await el.inner_text()
+                    num = re.sub(r'[^0-9]', '', txt)
+                    if num:
+                        set_price = int(num)
+                        print(f"   🎯 가격 발견 ({s}): {set_price}")
+                        break
         
         return mall_name, set_price
 
     except Exception as e:
-        print(f"   ⚠️ 에러 상세: {str(e)[:100]}")
+        print(f"   ⚠️ 에러: {str(e)[:100]}")
         return "에러", 0
 
 async def main():
-    # 구글 시트 인증
-    try:
-        creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
-        creds = json.loads(creds_raw)
-        gc = gspread.service_account_from_dict(creds)
-        sh = gc.open_by_key(SH_ID)
-    except Exception as e:
-        print(f"❌ 구글 시트 연결 실패: {e}")
-        return
-
-    # 탭 확인 및 생성
+    creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
+    creds = json.loads(creds_raw)
+    gc = gspread.service_account_from_dict(creds)
+    sh = gc.open_by_key(SH_ID)
+    
     try:
         wks = sh.worksheet("정산가분석")
     except:
@@ -129,18 +109,17 @@ async def main():
         wks.append_row(["수집시간", "상품명", "구성", "판매처", "설정가", "정산금(85%)"])
 
     async with async_playwright() as p:
-        # 브라우저 실행 (서버 환경에 최적화)
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
 
         for prod_name, urls in PRODUCTS.items():
             print(f"\n--- {prod_name} 수집 시작 ---")
             for idx, url in enumerate(urls):
-                if not url or url.strip() == "": continue
+                if not url: continue
                 
                 mall, price = await get_mall_set_price(page, url, f"{idx+1}개입")
                 
@@ -148,11 +127,10 @@ async def main():
                     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     settle = int(price * 0.85)
                     wks.append_row([now_str, prod_name, f"{idx+1}개입", mall, price, settle])
-                    print(f"   ✅ 성공: {mall} / {price}원 (정산가: {settle}원)")
+                    print(f"   ✅ 수집성공: {mall} / {price}원")
                 else:
-                    print(f"   ❌ 수집실패 (결과값 없음)")
+                    print(f"   ❌ 수집실패 ({mall} - 가격 확인 불가)")
                 
-                # 차단 방지를 위한 랜덤 휴식
                 await asyncio.sleep(random.randint(8, 15))
 
         await browser.close()
