@@ -24,15 +24,13 @@ async def get_price_final(browser_context, url, idx_name):
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(4)
         
-        # 다나와에서 구매 버튼 클릭 및 팝업 대기
         new_page = None
         try:
             async with page.expect_popup(timeout=20000) as popup_info:
-                # 텍스트 '구매하기'가 들어간 링크 클릭
-                await page.locator("a:has-text('구매하기'), a.btn_buy, .lowest_area a").first.click()
+                # 더 넓은 범위의 클릭 셀렉터
+                await page.locator("a:has-text('구매하기'), a.btn_buy, .lowest_area a, .prc_c a").first.click()
             new_page = await popup_info.value
         except:
-            # 클릭 실패 시 직접 링크 추출 시도
             link = await page.evaluate("() => document.querySelector('.lowest_area a, .prc_c a')?.href")
             if link:
                 new_page = await browser_context.new_page()
@@ -41,29 +39,31 @@ async def get_price_final(browser_context, url, idx_name):
         if not new_page: return None, 0
         
         await new_page.bring_to_front()
-        await asyncio.sleep(12) # 로딩 충분히 대기
+        await asyncio.sleep(12)
 
-        # 지마켓 검색 페이지인 경우 첫 상품으로 강제 이동 로직 강화
-        if "search" in new_page.url:
-            print("   🚀 지마켓 검색 리스트에서 탈출 시도...")
-            first_item = await new_page.locator(".box__item-container a, .link__item, .image__item a").first
-            href = await first_item.get_attribute("href")
-            if href:
-                await new_page.goto(href if href.startswith('http') else f"https:{href}")
-                await asyncio.sleep(8)
+        # [수정] 지마켓 검색 리스트 탈출 로직 (문법 에러 해결)
+        if "search" in new_page.url or "keyword=" in new_page.url:
+            print("   🚀 지마켓/옥션 리스트 탈출 시도...")
+            try:
+                # locator().first 뒤에 바로 get_attribute를 쓰지 않고 객체를 먼저 받음
+                first_item_locator = new_page.locator(".box__item-container a, .link__item, .image__item a").first
+                href = await first_item_locator.get_attribute("href")
+                if href:
+                    target_url = href if href.startswith('http') else f"https:{href}"
+                    await new_page.goto(target_url, wait_until="load")
+                    await asyncio.sleep(8)
+            except Exception as e:
+                print(f"   ⚠️ 리스트 탈출 중 오류: {e}")
 
         print(f"   🔗 상세페이지 도착: {new_page.url[:60]}")
-        
         mall_name = "지마켓" if "gmarket" in new_page.url else "옥션" if "auction" in new_page.url else "11번가" if "11st" in new_page.url else "기타"
         
-        # [핵심] 가격 추출 전략: 화면에 보이는 모든 텍스트를 검사
         price = 0
-        
-        # 1. 널리 알려진 가격 선택자들 먼저 시도
+        # 1. 셀렉터 기반 추출 (옥션/지마켓 원가 타겟)
         selectors = [
             "span.price_inner__price", "#lblSellingPrice", "del.original_price", 
             ".price_detail .value", "strong.price_real_value", ".price_real",
-            ".price_main", ".price-info .price"
+            "span.price_main", "div.price_area"
         ]
         
         for s in selectors:
@@ -72,19 +72,22 @@ async def get_price_final(browser_context, url, idx_name):
                 if el:
                     txt = await el.inner_text()
                     num = int(re.sub(r'[^0-9]', '', txt))
-                    if 10000 < num < 1000000: # 현실적인 가격 범위
+                    if 10000 < num < 1000000:
                         price = num
                         break
             except: continue
         
-        # 2. 실패 시: '원' 앞에 있는 숫자나 특정 큰 금액 텍스트 패턴 매칭 (가장 확실한 백업)
+        # 2. 패턴 매칭 강화 (옥션/지마켓 특수 문자 대응)
         if price == 0:
-            print("   ⚠️ 일반 추출 실패, 패턴 매칭 시도...")
+            print("   ⚠️ 패턴 매칭 가동...")
             content = await new_page.content()
-            # 59,770원 같은 패턴 찾기
+            # 쉼표 포함/미포함 숫자 + 원 패턴
             matches = re.findall(r'([0-9,]{4,})\s*원', content)
+            # 숫자로만 된 패턴 (지마켓/옥션 가격 텍스트)
+            matches += re.findall(r'price["\']\s*:\s*(\d{5,})', content)
+            
             for m in matches:
-                num = int(re.sub(r'[^0-9]', '', m))
+                num = int(re.sub(r'[^0-9]', '', str(m)))
                 if 10000 < num < 1000000:
                     price = num
                     break
@@ -96,7 +99,7 @@ async def get_price_final(browser_context, url, idx_name):
         return mall_name, price
 
     except Exception as e:
-        print(f"   ⚠️ 오류: {str(e)[:50]}")
+        print(f"   ⚠️ 오류: {str(e)[:100]}")
         return None, 0
     finally:
         await page.close()
