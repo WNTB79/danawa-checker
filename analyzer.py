@@ -1,127 +1,126 @@
-import os
-import json
 import asyncio
 import random
-import gspread
 import re
+import json
+import os
 from datetime import datetime
 from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
+import gspread
 
-# --- 설정 (기존 정보 활용) ---
-SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"  # 친구의 시트 ID
-# 분석할 상품 리스트 (기존 PRODUCTS와 동일하게 유지하거나 테스트용으로 몇 개만 두셔도 됩니다)
-# 우선은 옥션/지마켓 비중이 높은 상품 위주로 테스트해보세요.
+# --- 설정 (기존 정보 유지) ---
+SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
+
+# 테스트를 위해 '콘드1200' 1개 상품의 6개 주소만 설정
 PRODUCTS = {
     "콘드1200": [
-        "https://prod.danawa.com/info/?pcode=13412984", 
-        "https://prod.danawa.com/info/?pcode=13413059",
-        "https://prod.danawa.com/info/?pcode=13413086", 
-        "https://prod.danawa.com/info/?pcode=13413254",
-        "https://prod.danawa.com/info/?pcode=13678937", 
-        "https://prod.danawa.com/info/?pcode=13413314"
-    ] # 여기서 주소 리스트를 닫고(])
-} # 여기서 전체 묶음을 닫아줘야(}) 에러가 안 나!
+        "https://prod.danawa.com/info/?pcode=13412984", "https://prod.danawa.com/info/?pcode=13413059",
+        "https://prod.danawa.com/info/?pcode=13413086", "https://prod.danawa.com/info/?pcode=13413254",
+        "https://prod.danawa.com/info/?pcode=13678937", "https://prod.danawa.com/info/?pcode=13413314"
+    ]
+}
 
-async def get_seller_price(page, url):
-    """다나와 1위 상품의 상세페이지로 들어가서 판매자 설정가를 가져오는 함수"""
+async def get_mall_set_price(page, url, idx_name):
+    """다나와 유료배송 1위를 클릭해 들어가서 판매자 설정가를 가져옴"""
     try:
-        # 페이지 접속 시 충분한 시간을 줍니다
-        await page.goto(url, wait_until="networkidle") 
-        await asyncio.sleep(3) 
-
-        # 1. 다나와 리스트에서 1위 판매처 찾기 (광고 제외하고 가장 첫 번째)
-        # 다양한 레이아웃(리스트형, 카드형)에 대응하기 위한 여러 선택자 시도
-        first_seller = None
-        selectors = [
-            ".product_list .product_item:not(.product_ad_item) .grid_main_info .price_sect a",
-            ".diff_item:not(.ad_item) .diff_item_price a",
-            ".rank_one:not(.ad_item) .price_line a"
-        ]
+        print(f"🔎 {idx_name} 분석 중: {url}")
+        await page.goto(url, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(5)
         
-        for selector in selectors:
-            first_seller = await page.query_selector(selector)
-            if first_seller:
+        # 1. 기존 로직처럼 '유료배송' 아이템 찾기
+        content = await page.content()
+        soup = BeautifulSoup(content, 'html.parser')
+        items = soup.select(".diff_item, .product-item, li[id^='productItem']")
+
+        target_link_selector = None
+        for i, item in enumerate(items):
+            all_text = item.get_text(separator=' ', strip=True)
+            # '무료배송'이 아니고 '원'이 포함된 유료배송 아이템 중 첫 번째(1위)
+            if "무료배송" not in all_text and ("배송비" in all_text or "원" in all_text):
+                # 해당 아이템의 클릭 가능한 링크(a 태그)의 선택자 생성
+                target_link_selector = f".diff_item:nth-of-type({i+1}) .prc_c a, .diff_item:nth-of-type({i+1}) .price a"
                 break
 
-        if not first_seller:
-            print("❌ 다나와 리스트에서 가격 링크를 찾지 못했습니다.")
-            return "N/A", 0
+        if not target_link_selector:
+            return "유료배송없음", 0
 
-        # 클릭해서 새 탭(상세페이지) 열기
-        async with page.context.expect_page() as new_page_info:
-            await first_seller.click()
+        # 2. 1위 판매처 클릭 (새 탭 열기)
+        try:
+            async with page.context.expect_page() as new_page_info:
+                # 해당 요소를 찾아 클릭
+                await page.click(target_link_selector, timeout=5000)
+            mall_page = await new_page_info.value
+        except:
+            print("   ⚠️ 클릭 실패 또는 새 창 미발생")
+            return "클릭실패", 0
+
+        await mall_page.bring_to_front()
+        await asyncio.sleep(6) # 상세페이지 로딩 대기
         
-        target_page = await new_page_info.value
-        await target_page.bring_to_front()
-        # 상세페이지 로딩 대기
-        await asyncio.sleep(5) 
+        curr_url = mall_page.url
+        mall_name = "기타"
+        set_price = 0
 
-        current_url = target_page.url
-        print(f"🔗 이동된 판매처: {current_url}")
+        # 3. 쇼핑몰별 '판매자 설정가' 추출
+        if "auction.co.kr" in curr_url:
+            mall_name = "옥션"
+            el = await mall_page.query_selector("#lblSellingPrice") # 옥션 설정가 ID
+            if el:
+                price_text = await el.inner_text()
+                set_price = int(re.sub(r'[^0-9]', '', price_text))
 
-        price = 0
-        seller_name = "알 수 없음"
-
-        # 2. 플랫폼별 설정가 추출 로직 (옥션/지마켓 우선)
-        if "auction.co.kr" in current_url:
-            seller_name = "옥션"
-            element = await target_page.query_selector("#lblSellingPrice")
-            if element:
-                price_text = await element.inner_text()
-                price = int(re.sub(r'[^0-9]', '', price_text))
+        elif "gmarket.co.kr" in curr_url:
+            mall_name = "지마켓"
+            # 지마켓은 여러 후보 중 값이 있는 것을 선택
+            for s in [".price_real", "#lblSellingPrice", "span.price"]:
+                el = await mall_page.query_selector(s)
+                if el:
+                    price_text = await el.inner_text()
+                    set_price = int(re.sub(r'[^0-9]', '', price_text))
+                    if set_price > 0: break
         
-        elif "gmarket.co.kr" in current_url:
-            seller_name = "지마켓"
-            # 지마켓의 다양한 가격 태그 시도
-            for s in [".price_real", "#lblSellingPrice", ".un-tr-price"]:
-                element = await target_page.query_selector(s)
-                if element:
-                    price_text = await element.inner_text()
-                    if price_text.strip():
-                        price = int(re.sub(r'[^0-9]', '', price_text))
-                        break
-        
-        else:
-            seller_name = "기타(확인필요)"
-            # 일반적인 쇼핑몰 가격 태그 시도
-            for s in [".price", ".total_price", ".pay-amount"]:
-                element = await target_page.query_selector(s)
-                if element:
-                    price_text = await element.inner_text()
-                    price = int(re.sub(r'[^0-9]', '', price_text))
-                    break
-
-        await target_page.close()
-        return seller_name, price  # <--- 여기까지가 수정할 부분의 끝입니다!
+        await mall_page.close()
+        return mall_name, set_price
 
     except Exception as e:
-        print(f"⚠️ 상세페이지 분석 오류: {e}")
-        return "오류", 0
+        print(f"   ⚠️ 에러: {e}")
+        return "에러", 0
+
 async def main():
+    # 구글 인증
     creds_raw = os.environ.get('GCP_CREDENTIALS', '').strip()
     creds = json.loads(creds_raw)
     gc = gspread.service_account_from_dict(creds)
     sh = gc.open_by_key(SH_ID)
-    wks = sh.worksheet("정산가분석") # 새로 만든 탭 이름
+    
+    # '정산가분석' 탭이 없으면 생성, 있으면 연결
+    try:
+        wks = sh.worksheet("정산가분석")
+    except:
+        wks = sh.add_worksheet(title="정산가분석", rows="100", cols="10")
+        wks.append_row(["수집시간", "상품명", "구성", "판매처", "설정가", "정산금(85%)"])
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(viewport={'width': 1920, 'height': 1080})
+        page = await context.new_page()
 
-        for tab_name, urls in PRODUCTS.items():
-            for url in urls:
-                print(f"🔍 {tab_name} 1위 추적 시작...")
-                seller, price = await get_seller_price(page, url)
+        for prod_name, urls in PRODUCTS.items():
+            print(f"🚀 {prod_name} 분석 시작...")
+            for idx, url in enumerate(urls):
+                if not url: continue
+                
+                mall, price = await get_mall_set_price(page, url, f"{idx+1}개입")
                 
                 if price > 0:
                     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    settle_price = int(price * 0.85) # 85% 정산가 계산
-                    
-                    # 시트에 기록 [시간, 상품군, 업체명, 설정가, 85%정산가]
-                    wks.append_row([now_str, tab_name, seller, price, settle_price])
-                    print(f"✅ {tab_name} 기록 완료: {price}원 -> 정산가 {settle_price}원")
+                    settle_money = int(price * 0.85) # 85% 정산가 계산
+                    wks.append_row([now_str, prod_name, f"{idx+1}개입", mall, price, settle_money])
+                    print(f"   ✅ 성공: {mall} / 설정가 {price}원 / 정산금 {settle_money}원")
+                else:
+                    print(f"   ❌ 실패: {mall}")
                 
-                await asyncio.sleep(random.randint(2, 5))
+                await asyncio.sleep(random.randint(3, 7))
 
         await browser.close()
 
