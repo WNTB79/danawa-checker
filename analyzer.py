@@ -7,13 +7,16 @@ from datetime import datetime
 from playwright.async_api import async_playwright
 import gspread
 
-# --- 설정 ---
 SH_ID = "1hKx0tg2jkaVswVIfkv8jbqx0QrlRkftFtjtVlR09cLQ"
+# URL을 상세페이지가 아닌 '검색 결과' URL로 변경 (더 안정적임)
 PRODUCTS = {
     "콘드1200": [
-        "https://prod.danawa.com/info/?pcode=13412984", "https://prod.danawa.com/info/?pcode=13413059",
-        "https://prod.danawa.com/info/?pcode=13413086", "https://prod.danawa.com/info/?pcode=13413254",
-        "https://prod.danawa.com/info/?pcode=13678937", "https://prod.danawa.com/info/?pcode=13413314"
+        "https://search.danawa.com/dsearch.php?query=13412984", 
+        "https://search.danawa.com/dsearch.php?query=13413059",
+        "https://search.danawa.com/dsearch.php?query=13413086", 
+        "https://search.danawa.com/dsearch.php?query=13413254",
+        "https://search.danawa.com/dsearch.php?query=13678937", 
+        "https://search.danawa.com/dsearch.php?query=13413314"
     ]
 }
 
@@ -21,52 +24,40 @@ async def get_price_final(browser_context, url, idx_name):
     page = await browser_context.new_page()
     try:
         print(f"🔎 {idx_name} 분석: {url}")
-        # 페이지 로딩 및 판매처 목록이 나타날 때까지 스크롤하며 대기
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await page.evaluate("window.scrollTo(0, 800)")
-        
-        # [핵심] 판매처 리스트(지마켓, 옥션 등)가 로딩될 때까지 최대 15초 대기
-        try:
-            await page.wait_for_selector(".lowest_list, .diff_item", timeout=15000)
-        except:
-            print("   ⚠️ 판매처 목록 로딩 지연 중...")
+        # 다나와 검색 리스트 페이지 접속
+        await page.goto(url, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(3)
 
-        await asyncio.sleep(5)
-
-        # [전략 1] 광고 제외, 지마켓/옥션/11번가 중 진짜 1위(최상단) 찾기
+        # [전략] 상세페이지로 들어가지 않고, 검색 결과에 노출된 '지마켓/옥션' 링크를 바로 추출
         target_link = await page.evaluate("""() => {
-            const mallKeywords = ['G마켓', '옥션', '11번가'];
-            // 모든 가격 비교 행을 가져옴
-            const items = document.querySelectorAll('.lowest_list tr, .diff_item');
-            
-            for (const item of items) {
-                const text = item.innerText;
-                const link = item.querySelector('a[href*="bridge/loadingBridge"]');
-                
-                // 몰 이름이 키워드에 포함되어 있고 링크가 있다면 첫 번째 것을 반환
-                if (link && mallKeywords.some(k => text.includes(k))) {
-                    return link.href;
+            // 가격비교 영역 내의 몰 링크들 탐색
+            const links = Array.from(document.querySelectorAll('a[href*="bridge/loadingBridge"]'));
+            for (let l of links) {
+                const text = l.innerText || "";
+                const mall = l.parentElement.innerText || "";
+                if (mall.includes('G마켓') || mall.includes('옥션') || mall.includes('11번가') || text.includes('최저가')) {
+                    return l.href;
                 }
             }
             return null;
         }""")
 
-        # 링크를 못 찾았다면 최후의 수단으로 '최저가 구매하기' 버튼이라도 긁음
         if not target_link:
-            target_link = await page.evaluate("() => document.querySelector('.lowest_area a.item__link')?.href")
+            # 실패 시 기존 상세페이지 버튼이라도 시도
+            target_link = await page.evaluate("() => document.querySelector('.btn_buy, .lowest_area a')?.href")
 
         if not target_link:
-            print("   ❌ 판매처 탐색 실패 (지마켓/옥션/11번가 없음)")
+            print("   ❌ 판매처 링크 추출 실패")
             return None, 0
 
-        # [전략 2] 상세페이지 이동 및 보안 우회
+        # 쇼핑몰 이동
         new_page = await browser_context.new_page()
-        print(f"   🚀 판매처 이동 중...")
+        print(f"   🚀 쇼핑몰 점프...")
         await new_page.goto(target_link, wait_until="load", timeout=90000)
         await asyncio.sleep(12)
 
-        # 지마켓 검색창 튕김 방지 (주소 재조합)
-        if "search" in new_page.url or "keyword=" in new_page.url:
+        # 지마켓/옥션 리스트 튕김 대응
+        if "search" in new_page.url:
             item_no = re.search(r'(itemno|goodscode|goodsNo)=(\d+)', target_link)
             if item_no:
                 num = item_no.group(2)
@@ -74,42 +65,32 @@ async def get_price_final(browser_context, url, idx_name):
                 await new_page.goto(direct, wait_until="load")
                 await asyncio.sleep(8)
 
-        # 상세페이지 로딩 후 스크롤 (봇 방지 우회)
-        await new_page.evaluate("window.scrollTo(0, 500)")
-        await asyncio.sleep(3)
-
-        print(f"   🔗 최종 페이지: {new_page.url[:60]}")
+        print(f"   🔗 최종 도착: {new_page.url[:50]}...")
         mall_name = "지마켓" if "gmarket" in new_page.url else "옥션" if "auction" in new_page.url else "11번가" if "11st" in new_page.url else "기타"
         
-        # [전략 3] 가격 추출 (텍스트 기반 패턴 매칭 강화)
+        # 가격 추출
         price = 0
-        selectors = ["span.price_inner__price", "#lblSellingPrice", "del.original_price", ".price_real", "strong.price_real_value"]
+        content = await new_page.content()
+        # 1. 태그 기반
+        for s in ["span.price_inner__price", "#lblSellingPrice", "del.original_price", ".price_real"]:
+            el = await new_page.query_selector(s)
+            if el:
+                txt = await el.inner_text()
+                num = int(re.sub(r'[^0-9]', '', txt))
+                if 10000 < num < 1000000: price = num; break
         
-        for s in selectors:
-            try:
-                el = await new_page.query_selector(s)
-                if el:
-                    txt = await el.inner_text()
-                    num = int(re.sub(r'[^0-9]', '', txt))
-                    if 10000 < num < 1000000:
-                        price = num
-                        break
-            except: continue
-
+        # 2. 패턴 기반 (11번가 등에서 성공했던 로직)
         if price == 0:
-            # 패턴 매칭 백업
-            body_text = await new_page.inner_text("body")
-            matches = re.findall(r'([0-9,]{4,})\s*원', body_text)
+            matches = re.findall(r'([0-9,]{4,})\s*원', content)
             for m in matches:
                 num = int(re.sub(r'[^0-9]', '', m))
-                if 10000 < num < 1000000:
-                    price = num; break
+                if 10000 < num < 1000000: price = num; break
 
         await new_page.close()
         return mall_name, price
 
     except Exception as e:
-        print(f"   ⚠️ 오류 발생: {str(e)[:50]}")
+        print(f"   ⚠️ 오류: {str(e)[:50]}")
         return None, 0
     finally:
         await page.close()
@@ -122,10 +103,11 @@ async def main():
     wks = sh.worksheet("정산가분석")
 
     async with async_playwright() as p:
+        # 스텔스 모드와 유사한 설정
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={'width': 1920, 'height': 1080}
         )
 
         for prod_name, urls in PRODUCTS.items():
@@ -135,7 +117,7 @@ async def main():
                 if price > 0:
                     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     wks.append_row([now, prod_name, f"{idx+1}개입", mall, price, int(price * 0.85)])
-                    print(f"   ✅ 기록 성공: {price}원")
+                    print(f"   ✅ 시트 기록 완료: {price}원")
                 else:
                     print("   ❌ 수집 실패")
                 await asyncio.sleep(random.randint(15, 20))
