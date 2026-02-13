@@ -24,48 +24,61 @@ async def get_price_final(browser_context, url, idx_name):
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(4)
         
-        new_page = None
-        try:
-            async with page.expect_popup(timeout=20000) as popup_info:
-                # 더 넓은 범위의 클릭 셀렉터
-                await page.locator("a:has-text('구매하기'), a.btn_buy, .lowest_area a, .prc_c a").first.click()
-            new_page = await popup_info.value
-        except:
-            link = await page.evaluate("() => document.querySelector('.lowest_area a, .prc_c a')?.href")
-            if link:
-                new_page = await browser_context.new_page()
-                await new_page.goto(link, wait_until="load")
+        # [전략 1] 다나와 버튼 클릭 대신 '링크 주소'만 먼저 따오기
+        target_href = await page.evaluate("""() => {
+            const link = document.querySelector('.lowest_area a, .prc_c a');
+            return link ? link.href : null;
+        }""")
 
-        if not new_page: return None, 0
+        if not target_href: return None, 0
+
+        # [전략 2] 지마켓/옥션이면 주소에서 상품번호 추출해서 직접 상세페이지로 꽂기
+        # 다나와 브릿지 주소엔 보통 상품번호가 포함되어 있음
+        item_no_match = re.search(r'(itemno|goodscode|goodsNo)=(\d+)', target_href)
         
+        new_page = await browser_context.new_page()
+        if item_no_match:
+            item_no = item_no_match.group(2)
+            if "gmarket" in target_href.lower():
+                direct_url = f"https://item.gmarket.co.kr/Item?goodscode={item_no}"
+            elif "auction" in target_href.lower():
+                direct_url = f"https://itempage3.auction.co.kr/DetailView.aspx?itemno={item_no}"
+            else:
+                direct_url = target_href
+            
+            print(f"   🚀 직접 주소로 점프: {direct_url[:50]}...")
+            await new_page.goto(direct_url, wait_until="load", timeout=60000)
+        else:
+            # 번호 추출 실패 시 일반적인 팝업 대기 클릭
+            async with page.expect_popup(timeout=20000) as popup_info:
+                await page.locator(".lowest_area a, .prc_c a").first.click()
+            new_page = await popup_info.value
+
         await new_page.bring_to_front()
-        await asyncio.sleep(12)
+        await asyncio.sleep(10)
 
-        # [수정] 지마켓 검색 리스트 탈출 로직 (문법 에러 해결)
-        if "search" in new_page.url or "keyword=" in new_page.url:
-            print("   🚀 지마켓/옥션 리스트 탈출 시도...")
-            try:
-                # locator().first 뒤에 바로 get_attribute를 쓰지 않고 객체를 먼저 받음
-                first_item_locator = new_page.locator(".box__item-container a, .link__item, .image__item a").first
-                href = await first_item_locator.get_attribute("href")
-                if href:
-                    target_url = href if href.startswith('http') else f"https:{href}"
-                    await new_page.goto(target_url, wait_until="load")
-                    await asyncio.sleep(8)
-            except Exception as e:
-                print(f"   ⚠️ 리스트 탈출 중 오류: {e}")
+        # 지마켓 검색창으로 또 튕겼을 때의 마지막 보험
+        if "search" in new_page.url:
+            print("   ⚠️ 검색창 튕김! 첫 상품 강제 이동...")
+            # 텍스트에서 숫자를 찾아 주소 재조합
+            raw_content = await new_page.content()
+            code_match = re.search(r'goodscode=(\d+)', raw_content)
+            if code_match:
+                await new_page.goto(f"https://item.gmarket.co.kr/Item?goodscode={code_match.group(1)}")
+                await asyncio.sleep(7)
 
-        print(f"   🔗 상세페이지 도착: {new_page.url[:60]}")
+        print(f"   🔗 최종 도착: {new_page.url[:60]}")
         mall_name = "지마켓" if "gmarket" in new_page.url else "옥션" if "auction" in new_page.url else "11번가" if "11st" in new_page.url else "기타"
         
         price = 0
-        # 1. 셀렉터 기반 추출 (옥션/지마켓 원가 타겟)
+        # 가격 추출 (더 넓은 범위의 텍스트 스캔)
         selectors = [
             "span.price_inner__price", "#lblSellingPrice", "del.original_price", 
             ".price_detail .value", "strong.price_real_value", ".price_real",
-            "span.price_main", "div.price_area"
+            ".price_inner", "div[class*='price']"
         ]
         
+        # 1차 선택자 시도
         for s in selectors:
             try:
                 el = await new_page.query_selector(s)
@@ -77,24 +90,19 @@ async def get_price_final(browser_context, url, idx_name):
                         break
             except: continue
         
-        # 2. 패턴 매칭 강화 (옥션/지마켓 특수 문자 대응)
+        # 2차: 화면 전체 텍스트 패턴 매칭 (옥션/지마켓 설정가 완벽 대응)
         if price == 0:
             print("   ⚠️ 패턴 매칭 가동...")
             content = await new_page.content()
-            # 쉼표 포함/미포함 숫자 + 원 패턴
+            # "설정가", "판매가", "시중가" 등의 키워드 근처 숫자 찾기
             matches = re.findall(r'([0-9,]{4,})\s*원', content)
-            # 숫자로만 된 패턴 (지마켓/옥션 가격 텍스트)
-            matches += re.findall(r'price["\']\s*:\s*(\d{5,})', content)
-            
             for m in matches:
                 num = int(re.sub(r'[^0-9]', '', str(m)))
                 if 10000 < num < 1000000:
                     price = num
+                    print(f"   🎯 패턴 매칭으로 찾음: {price}")
                     break
 
-        if price > 0:
-            print(f"   💰 {mall_name} 최종 가격: {price}원")
-            
         await new_page.close()
         return mall_name, price
 
