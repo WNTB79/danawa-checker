@@ -21,88 +21,84 @@ PRODUCTS = {
 async def get_mall_set_price(page, url, idx_name):
     try:
         print(f"🔎 {idx_name} 분석 시작: {url}")
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         
-        # 1. 다나와 페이지 접속
-        await page.goto(url, wait_until="networkidle", timeout=60000)
-        
-        # 2. 가격 비교 리스트 로딩을 위해 충분히 대기 및 스크롤
+        # 1. 다나와 리스트 렌더링 대기
         await asyncio.sleep(5)
-        for _ in range(3): # 여러 번 나눠서 스크롤하여 동적 로딩 유도
-            await page.mouse.wheel(0, 500)
-            await asyncio.sleep(1)
-        
-        # 리스트가 로드되었는지 최종 확인
+        await page.evaluate("window.scrollTo(0, 1000)")
         try:
-            await page.wait_for_selector(".diff_item, .prc_line", timeout=15000)
-            print("   ✅ 리스트 렌더링 완료")
-        except:
-            print("   ⚠️ 리스트 요소를 찾는 중...")
+            await page.wait_for_selector(".diff_item", timeout=15000)
+            print("   ✅ 다나와 리스트 확인")
+        except: pass
 
-        # 3. 자바스크립트를 이용해 유료배송 1위 업체 직접 찾기
-        # 이 방식은 BeautifulSoup보다 훨씬 강력하게 현재 화면의 요소를 잡아냅니다.
+        # 2. 유료배송 1위 업체 링크 추출
         target_link = await page.evaluate("""
             () => {
-                const items = document.querySelectorAll('.diff_item, [id^="productItem"]');
+                const items = document.querySelectorAll('.diff_item');
                 for (const item of items) {
                     const text = item.innerText;
-                    // '무료배송'이 없으면서 '배송비' 혹은 '원' 문구가 있는 유료배송 업체 찾기
                     if (!text.includes('무료배송') && (text.includes('배송비') || text.includes('원'))) {
-                        const aTag = item.querySelector('.prc_c a, .mall_nm a, .btn_buy a, a');
-                        if (aTag && aTag.href && !aTag.href.includes('javascript')) {
-                            return aTag.href;
-                        }
+                        const aTag = item.querySelector('.prc_c a, .mall_nm a, .btn_buy a');
+                        if (aTag && aTag.href) return aTag.href;
                     }
-                }
-                // 만약 못 찾았다면 첫 번째 요소라도 반환
-                if (items.length > 0) {
-                    const firstA = items[0].querySelector('.prc_c a, .btn_buy a, a');
-                    return firstA ? firstA.href : null;
                 }
                 return null;
             }
         """)
 
         if not target_link:
-            print(f"   ❌ {idx_name}: 링크 추출 실패")
+            print(f"   ❌ {idx_name}: 다나와 링크 추출 실패")
             return "업체미발견", 0
 
-        # 4. 쇼핑몰 이동
-        print(f"   🚀 판매처 이동: {target_link[:60]}...")
+        # 3. 쇼핑몰 이동 (1차 진입: 보통 검색 결과 페이지)
+        print(f"   🚀 판매처 이동 시작...")
         await page.goto(target_link, wait_until="load", timeout=90000)
-        await asyncio.sleep(12) 
+        await asyncio.sleep(8)
         
+        # [지마켓 전용] 검색 결과 페이지라면 첫 번째 상품 클릭해서 상세페이지 진입
+        if "gmarket.co.kr/n/search" in page.url:
+            print("   🖱️ 지마켓 검색 리스트 발견, 상세페이지로 클릭 이동...")
+            try:
+                # 첫 번째 상품 이미지나 제목 클릭
+                await page.click(".box__item-container a, .image__item", timeout=10000)
+                await asyncio.sleep(8)
+            except:
+                print("   ⚠️ 클릭 실패, 현재 페이지에서 분석 시도")
+
         final_url = page.url
-        print(f"   🔗 최종 도착: {final_url[:70]}...")
+        print(f"   🔗 최종 도착: {final_url[:60]}...")
 
         mall_name = "기타몰"
         set_price = 0
 
-        # 5. 가격 추출 (상세페이지 + 검색페이지 통합 대응)
+        # 4. 가격 추출 (지마켓/옥션 정밀 타격)
         if "auction.co.kr" in final_url or "gmarket.co.kr" in final_url:
             mall_name = "옥션" if "auction" in final_url else "지마켓"
             
-            # 지마켓/옥션의 다양한 가격 태그 (상세페이지 및 검색결과 페이지 포함)
-            selectors = [
-                "#lblSellingPrice", ".price_real", ".price_main", "span.price", 
-                ".box__price-value", ".text__price-area_value", "strong.price_real_value"
+            # 3번째 스샷의 '59,770원' 같은 설정가를 잡기 위한 선택자
+            # 지마켓 상세페이지의 '판매가' 영역을 집중 공략
+            price_selectors = [
+                "span.price_inner__price", # 지마켓 설정가
+                "del.original-price",      # 지마켓 할인 전 가격
+                "#lblSellingPrice",        # 옥션/지마켓 공통
+                ".price_real", ".price_main",
+                "strong.price_real_value"  # 검색결과용 대비
             ]
 
-            for s in selectors:
-                try:
-                    el = await page.query_selector(s)
-                    if el:
-                        txt = await el.inner_text()
-                        num = re.sub(r'[^0-9]', '', txt)
-                        if num and int(num) > 0:
-                            set_price = int(num)
-                            print(f"   🎯 가격 추출 성공 ({s}): {set_price}")
-                            break
-                except: continue
+            for s in price_selectors:
+                el = await page.query_selector(s)
+                if el:
+                    txt = await el.inner_text()
+                    num = re.sub(r'[^0-9]', '', txt)
+                    if num and int(num) > 1000: # 너무 낮은 가격(배송비 등) 제외
+                        set_price = int(num)
+                        print(f"   🎯 가격 발견 ({s}): {set_price}")
+                        break
         
         return mall_name, set_price
 
     except Exception as e:
-        print(f"   ⚠️ 에러 발생: {str(e)[:100]}")
+        print(f"   ⚠️ 에러: {str(e)[:50]}")
         return "에러", 0
 
 async def main():
@@ -119,12 +115,9 @@ async def main():
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        # 봇 탐지 회피를 위한 정교한 컨텍스트 설정
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            locale="ko-KR",
-            timezone_id="Asia/Seoul"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
 
@@ -132,19 +125,17 @@ async def main():
             print(f"\n--- {prod_name} 수집 시작 ---")
             for idx, url in enumerate(urls):
                 if not url: continue
-                
                 mall, price = await get_mall_set_price(page, url, f"{idx+1}개입")
                 
                 if price > 0:
                     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     settle = int(price * 0.85)
                     wks.append_row([now_str, prod_name, f"{idx+1}개입", mall, price, settle])
-                    print(f"   ✅ 데이터 기록 완료: {mall} / {price}원")
+                    print(f"   ✅ 성공: {mall} / {price}원")
                 else:
-                    print(f"   ❌ 최종 데이터 확인 불가 ({mall})")
+                    print(f"   ❌ 실패 ({mall})")
                 
                 await asyncio.sleep(random.randint(10, 15))
-
         await browser.close()
 
 if __name__ == "__main__":
