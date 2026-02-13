@@ -22,61 +22,48 @@ async def get_price_final(browser_context, url, idx_name):
     try:
         print(f"🔎 {idx_name} 분석: {url}")
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await asyncio.sleep(5)
+        await asyncio.sleep(4)
         
-        # 버튼을 찾기 위해 화면을 조금 내림
-        await page.evaluate("window.scrollTo(0, 500)")
-        await asyncio.sleep(2)
-
+        # 다나와에서 구매 버튼 클릭 및 팝업 대기
         new_page = None
-        print("   🎯 구매 버튼 탐색 및 클릭 시도...")
-
-        # [전략 1] '구매하기' 혹은 '최저가' 글자가 포함된 버튼/링크 직접 클릭
         try:
             async with page.expect_popup(timeout=20000) as popup_info:
-                # '구매하기'라는 글자가 들어간 모든 요소를 뒤져서 클릭
-                await page.locator("a:has-text('구매하기'), a:has-text('최저가')").first.click(timeout=15000)
+                # 텍스트 '구매하기'가 들어간 링크 클릭
+                await page.locator("a:has-text('구매하기'), a.btn_buy, .lowest_area a").first.click()
             new_page = await popup_info.value
-        except Exception as e:
-            print(f"   ⚠️ 일반 클릭 실패, 강제 링크 추출 시도...")
-            # [전략 2] 클릭 실패 시 페이지 내의 지마켓/옥션/11번가 이동 링크를 직접 찾아내서 강제 이동
-            target_href = await page.evaluate("""() => {
-                const links = Array.from(document.querySelectorAll('a[href*="bridge/loadingBridge"]'));
-                return links.length > 0 ? links[0].href : null;
-            }""")
-            
-            if target_href:
+        except:
+            # 클릭 실패 시 직접 링크 추출 시도
+            link = await page.evaluate("() => document.querySelector('.lowest_area a, .prc_c a')?.href")
+            if link:
                 new_page = await browser_context.new_page()
-                await new_page.goto(target_href, wait_until="load")
-            else:
-                print("   ❌ 이동 가능한 링크를 찾지 못했습니다.")
-                return None, 0
+                await new_page.goto(link, wait_until="load")
 
-        # 쇼핑몰 페이지 진입 성공 후
+        if not new_page: return None, 0
+        
         await new_page.bring_to_front()
-        await asyncio.sleep(10)
+        await asyncio.sleep(12) # 로딩 충분히 대기
 
-        # 지마켓 검색 페이지 리다이렉트 처리
-        if "gmarket.co.kr/n/search" in new_page.url:
-            print("   🚀 지마켓 검색페이지 탈출 시도...")
-            try:
-                first_item_link = await new_page.get_attribute(".box__item-container a, .image__item a", "href")
-                if first_item_link:
-                    goodscode = re.search(r'goodscode=(\d+)', first_item_link)
-                    if goodscode:
-                        await new_page.goto(f"https://item.gmarket.co.kr/Item?goodscode={goodscode.group(1)}")
-                        await asyncio.sleep(8)
-            except: pass
+        # 지마켓 검색 페이지인 경우 첫 상품으로 강제 이동 로직 강화
+        if "search" in new_page.url:
+            print("   🚀 지마켓 검색 리스트에서 탈출 시도...")
+            first_item = await new_page.locator(".box__item-container a, .link__item, .image__item a").first
+            href = await first_item.get_attribute("href")
+            if href:
+                await new_page.goto(href if href.startswith('http') else f"https:{href}")
+                await asyncio.sleep(8)
 
-        print(f"   🔗 최종 도착: {new_page.url[:60]}")
+        print(f"   🔗 상세페이지 도착: {new_page.url[:60]}")
         
         mall_name = "지마켓" if "gmarket" in new_page.url else "옥션" if "auction" in new_page.url else "11번가" if "11st" in new_page.url else "기타"
+        
+        # [핵심] 가격 추출 전략: 화면에 보이는 모든 텍스트를 검사
         price = 0
         
-        # 몰별 가격 태그 보강
+        # 1. 널리 알려진 가격 선택자들 먼저 시도
         selectors = [
             "span.price_inner__price", "#lblSellingPrice", "del.original_price", 
-            ".price_detail .value", "strong.price_real_value", ".price_real"
+            ".price_detail .value", "strong.price_real_value", ".price_real",
+            ".price_main", ".price-info .price"
         ]
         
         for s in selectors:
@@ -85,11 +72,25 @@ async def get_price_final(browser_context, url, idx_name):
                 if el:
                     txt = await el.inner_text()
                     num = int(re.sub(r'[^0-9]', '', txt))
-                    if num > 10000:
+                    if 10000 < num < 1000000: # 현실적인 가격 범위
                         price = num
-                        print(f"   💰 {mall_name} 가격 발견: {price}원")
                         break
             except: continue
+        
+        # 2. 실패 시: '원' 앞에 있는 숫자나 특정 큰 금액 텍스트 패턴 매칭 (가장 확실한 백업)
+        if price == 0:
+            print("   ⚠️ 일반 추출 실패, 패턴 매칭 시도...")
+            content = await new_page.content()
+            # 59,770원 같은 패턴 찾기
+            matches = re.findall(r'([0-9,]{4,})\s*원', content)
+            for m in matches:
+                num = int(re.sub(r'[^0-9]', '', m))
+                if 10000 < num < 1000000:
+                    price = num
+                    break
+
+        if price > 0:
+            print(f"   💰 {mall_name} 최종 가격: {price}원")
             
         await new_page.close()
         return mall_name, price
@@ -121,9 +122,9 @@ async def main():
                 if price > 0:
                     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     wks.append_row([now, prod_name, f"{idx+1}개입", mall, price, int(price * 0.85)])
-                    print("   ✅ 시트 업데이트 완료!")
+                    print("   ✅ 시트 기록 성공!")
                 else:
-                    print("   ❌ 최종 가격 수집 실패")
+                    print("   ❌ 가격 추출 실패")
                 await asyncio.sleep(random.randint(10, 15))
 
         await browser.close()
