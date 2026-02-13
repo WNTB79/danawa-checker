@@ -21,51 +21,40 @@ PRODUCTS = {
 async def get_mall_set_price(page, url, idx_name):
     try:
         print(f"🔎 {idx_name} 분석 시작: {url}")
-        # 봇 탐지 방지를 위해 좀 더 사람처럼 접속
-        await page.goto(url, wait_until="networkidle", timeout=60000)
+        # 다나와 접속 시 유저 에이전트 무작위성 부여
+        await page.goto(url, wait_until="load", timeout=60000)
+        await asyncio.sleep(7)
         
-        await asyncio.sleep(5)
-        await page.evaluate("window.scrollTo(0, 800)")
+        # [핵심] 다나와가 요소를 숨겨도 '전체 HTML 소스'에서 지마켓/옥션 브릿지 주소 강제 추출
+        content = await page.content()
+        # 다나와 브릿지(loadingBridge) 패턴 찾기
+        links = re.findall(r'https://prod\.danawa\.com/bridge/loadingBridge\.html\?[^\s\'"]+', content)
         
-        # 1. 링크 추출 로직 강화 (자바스크립트로 모든 클릭 가능 요소 수집)
-        target_link = await page.evaluate("""
-            () => {
-                // 가격 비교 테이블의 모든 행을 가져옴
-                const rows = document.querySelectorAll('.diff_item, .prc_line, [id^="productItem"]');
-                for (const row of rows) {
-                    const text = row.innerText;
-                    // 유료배송 혹은 배송비 문구가 포함된 행 탐색
-                    if (text.includes('배송비') || text.includes('원')) {
-                        const a = row.querySelector('a.p_link, a.btn_buy, .prc_c a, .mall_nm a');
-                        if (a && a.href && !a.href.includes('javascript')) return a.href;
-                    }
-                }
-                // 실패 시, 그냥 가장 처음에 보이는 몰 링크라도 가져옴
-                const firstA = document.querySelector('.prc_c a, .btn_buy a, .mall_nm a');
-                return firstA ? firstA.href : null;
-            }
-        """)
+        target_link = None
+        if links:
+            # 첫 번째 링크를 타겟으로 잡음
+            target_link = links[0].replace('&amp;', '&')
+            print(f"   🎯 브릿지 링크 강제 포착!")
+        else:
+            # 정석적인 방법으로 재시도
+            target_link = await page.evaluate("() => { const a = document.querySelector('.diff_item a, .btn_buy'); return a ? a.href : null; }")
 
         if not target_link:
-            print(f"   ❌ {idx_name}: 링크 추출 실패 (페이지 구조 확인 필요)")
+            print(f"   ❌ {idx_name}: 링크 추출 실패")
             return "업체미발견", 0
 
-        # 2. 판매처 이동
-        print(f"   🚀 판매처 이동: {target_link[:50]}...")
-        await page.goto(target_link, wait_until="load", timeout=90000)
+        # 1차 이동 (다나와 브릿지 페이지)
+        print(f"   🚀 판매처 이동...")
+        await page.goto(target_link, wait_until="load", timeout=60000)
         await asyncio.sleep(10)
-        
-        # 3. 지마켓/옥션 검색 결과 페이지 처리 (클릭해서 상세페이지로!)
-        if "gmarket.co.kr/n/search" in page.url or "auction.co.kr/search" in page.url:
-            print("   🖱️ 검색 리스트 감지, 첫 번째 상품으로 진입...")
+
+        # 만약 지마켓 검색페이지라면 첫 상품 클릭 (3단계 돌파)
+        if "gmarket.co.kr/n/search" in page.url:
+            print("   🖱️ 지마켓 리스트 클릭 중...")
             try:
-                # 지마켓/옥션 검색결과에서 상품 클릭 (여러 선택자 대응)
-                item_selector = ".box__item-container a, .image__item, .link__item, .item_title a"
-                await page.wait_for_selector(item_selector, timeout=10000)
-                await page.click(item_selector)
-                await asyncio.sleep(10)
-            except:
-                print("   ⚠️ 검색 결과에서 상품을 클릭하지 못함")
+                await page.click(".box__item-container a, .image__item", timeout=10000)
+                await asyncio.sleep(8)
+            except: pass
 
         final_url = page.url
         print(f"   🔗 최종 도착: {final_url[:60]}...")
@@ -73,34 +62,24 @@ async def get_mall_set_price(page, url, idx_name):
         mall_name = "기타몰"
         set_price = 0
 
-        # 4. 가격 추출 (최종 상세페이지)
+        # 가격 추출 (스샷에서 본 설정가 타겟팅)
         if "auction.co.kr" in final_url or "gmarket.co.kr" in final_url:
             mall_name = "옥션" if "auction" in final_url else "지마켓"
-            # 친구가 본 '설정가'를 찾기 위한 정밀 선택자
-            price_selectors = [
-                "span.price_inner__price", 
-                "del.original-price", 
-                "#lblSellingPrice", 
-                "strong.price_real_value",
-                ".price_real", ".price_main"
-            ]
-
-            for s in price_selectors:
-                try:
-                    el = await page.query_selector(s)
-                    if el:
-                        txt = await el.inner_text()
-                        num = re.sub(r'[^0-9]', '', txt)
-                        if num and int(num) > 5000: # 배송비 등 잘못된 가격 방지
-                            set_price = int(num)
-                            print(f"   🎯 가격 발견 ({s}): {set_price}")
-                            break
-                except: continue
+            # 59,770원 같은 설정가용 선택자 대폭 보강
+            for s in ["span.price_inner__price", "del.original-price", "#lblSellingPrice", "strong.price_real_value"]:
+                el = await page.query_selector(s)
+                if el:
+                    txt = await el.inner_text()
+                    num = re.sub(r'[^0-9]', '', txt)
+                    if num and int(num) > 1000:
+                        set_price = int(num)
+                        print(f"   💰 가격 발견: {set_price}")
+                        break
         
         return mall_name, set_price
 
     except Exception as e:
-        print(f"   ⚠️ 에러: {str(e)[:100]}")
+        print(f"   ⚠️ 에러 발생: {str(e)[:50]}")
         return "에러", 0
 
 async def main():
@@ -108,37 +87,23 @@ async def main():
     creds = json.loads(creds_raw)
     gc = gspread.service_account_from_dict(creds)
     sh = gc.open_by_key(SH_ID)
-    
-    try:
-        wks = sh.worksheet("정산가분석")
-    except:
-        wks = sh.add_worksheet(title="정산가분석", rows="1000", cols="6")
-        wks.append_row(["수집시간", "상품명", "구성", "판매처", "설정가", "정산금(85%)"])
+    wks = sh.worksheet("정산가분석")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        # 실제 브라우저와 거의 흡사한 환경 설정
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            locale="ko-KR"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
 
         for prod_name, urls in PRODUCTS.items():
             print(f"\n--- {prod_name} 수집 시작 ---")
             for idx, url in enumerate(urls):
-                if not url: continue
                 mall, price = await get_mall_set_price(page, url, f"{idx+1}개입")
-                
                 if price > 0:
-                    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    settle = int(price * 0.85)
-                    wks.append_row([now_str, prod_name, f"{idx+1}개입", mall, price, settle])
-                    print(f"   ✅ 성공: {mall} / {price}원")
-                else:
-                    print(f"   ❌ 실패 ({mall})")
-                
+                    wks.append_row([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), prod_name, f"{idx+1}개입", mall, price, int(price*0.85)])
+                    print(f"   ✅ 수집 완료: {price}원")
                 await asyncio.sleep(random.randint(10, 15))
         await browser.close()
 
